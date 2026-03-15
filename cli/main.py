@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import typer
@@ -34,6 +35,11 @@ def _install_theme(name: str, content: str, target: str) -> Path:
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     safe_name = name.replace(" ", "-").lower()
+    if not re.match(r"^[a-z0-9][a-z0-9_-]*$", safe_name):
+        raise ValueError(
+            f"Invalid theme name {name!r}. Names must start with a letter or digit "
+            "and contain only letters, digits, hyphens, and underscores."
+        )
     dest = dest_dir / f"{safe_name}{ext}"
     dest.write_text(content)
     return dest
