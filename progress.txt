@@ -40,6 +40,15 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `patch.dict("os.environ", {"KEY": "val"})` properly scopes env changes to a test; `os.environ.pop(key, None)` is needed to clear a key that may be set in the ambient env
 ---
 
+## 2026-03-15 - US-005
+- Implemented: Added `TRUSTED_PROXY_COUNT` env var in `api/middleware.py _ip_hash()`; 0 (default) ignores XFF and uses `request.client.host`; N>0 picks the Nth-from-right XFF entry; documented in .env.example (gitignored, updated locally)
+- Files changed: api/middleware.py, tests/test_xff_rate_limit.py (new)
+- **Learnings for future iterations:**
+  - `.env.example` is in `.gitignore` — can't be committed; document env vars in progress notes
+  - Use `MagicMock()` for `request.headers` so you can assign a custom `.get` lambda; plain `dict` objects don't allow `.get` override
+  - XFF parsing: `parts[max(0, len(parts) - N)]` gives the Nth-from-right entry cleanly without out-of-bounds risk
+---
+
 ## 2026-03-15 - US-003
 - Implemented: Added `re` import and regex validation in `_install_theme()` after the replace/lower step; raises ValueError for any name not matching `^[a-z0-9][a-z0-9_-]*$`
 - Files changed: cli/main.py, tests/test_cli_install.py (new)
