@@ -7,6 +7,7 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
 - Ruff S104 ("Possible binding to all interfaces") fires on "0.0.0.0" string literals in tests — suppress with `# noqa: S104`
 - No mypy in the venv; use `uv run ruff check` for static analysis. Full type pass = ruff passes.
 - `uv run pytest` is the test runner (pyproject.toml configures testpaths: tests)
+- To patch a module-level attribute (e.g. `httpx`) in tests, it must be imported at module level in the source file, not inside a function. Lazy imports inside functions cannot be patched as `module.attr`.
 
 ---
 
@@ -18,4 +19,14 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - Test pattern: patch socket.getaddrinfo with a list of tuples matching the getaddrinfo return shape — (family, type, proto, canonname, (ip, port))
   - IPv6 getaddrinfo entries have a 4-tuple address: (ip, port, flowinfo, scope_id) — the mock must use a 4-element tuple for AF_INET6
   - `ipaddress.IPv6Address.ipv4_mapped` returns None if the address is not ::ffff: prefixed
+---
+
+## 2026-03-15 - US-002
+- Implemented: Added `safe_fetch(url, **kwargs)` to security/ssrf_guard.py; updated image/loader.py to use safe_fetch instead of bare httpx.get
+- Files changed: security/ssrf_guard.py, image/loader.py, tests/test_ssrf_guard.py
+- **Learnings for future iterations:**
+  - httpx must be imported at module level in ssrf_guard.py so tests can patch `security.ssrf_guard.httpx`
+  - safe_fetch substitutes the resolved IP into the URL and sets the Host header; this closes the TOCTOU DNS rebinding window without a custom httpx transport
+  - `urlunparse((scheme, netloc, path, params, query, fragment))` is cleaner than `parsed._replace(netloc=...).geturl()` for URL reconstruction
+  - The test for IP substitution patches `security.ssrf_guard.httpx` (the module object) and asserts on `mock_httpx.get.call_args`
 ---

@@ -33,7 +33,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "SEC-C1 from audit. DNS TOCTOU between ssrf_guard.py check and loader.py httpx.get."
     },
     {
