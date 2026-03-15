@@ -76,3 +76,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - Preserve `\t`, `\n`, `\r` (all Cc) so tabs and newlines pass through — they get collapsed to single space by the whitespace regex anyway
   - The empty-check must come *after* whitespace collapse so a prompt of only spaces also raises ValueError
 ---
+
+## 2026-03-15 - US-008
+- Implemented: Added `_SECRET_NAME_RE = r'^[A-Z_][A-Z0-9_]*$'` and validation at top of `get_secret()` before any branch
+- Files changed: security/secrets.py, tests/test_secrets.py (new)
+- **Learnings for future iterations:**
+  - Validation must run before `_is_development()` so it guards both dev and prod paths
+  - `monkeypatch.delenv("KEY", raising=False)` cleanly handles the case where the env var may or may not exist
+  - Leading underscore (`_PRIVATE_KEY`) is a valid secret name per the regex — don't be surprised if test for that passes
+---
