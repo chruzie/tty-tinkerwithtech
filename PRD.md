@@ -12,17 +12,261 @@
 
 This document doubles as an executable implementation guide. Each phase is self-contained, testable, and deployable independently.
 
-| Phase | Name | Deliverable | Est. Effort |
-|-------|------|-------------|-------------|
-| 0 | Foundation | Repo scaffold, pyproject.toml, CI/CD pipeline, GCP project wiring | 1 day |
-| 1 | Core pipeline | Prompt + image generation, local serializers (Ghostty + iTerm2), SQLite cache | 2 days |
-| 2 | Provider system | Ollama, LM Studio, Gemini free tier, Claude Haiku adapters; keychain secret mgmt | 1 day |
-| 3 | Similarity search | MiniLM embeddings, cosine similarity, tiered cache (exact → similarity → LLM) | 1 day |
-| 4 | Web API | FastAPI app, Dockerize, deploy to Cloud Run, Firestore backend swap | 2 days |
-| 5 | Web UI | Firebase Hosting, static site (Vite + Tailwind, Space Mono), two-page flow | 2 days |
-| 6 | Community gallery | Publish/browse/like/share, Firebase Auth (GitHub OAuth), gallery API | 2 days |
-| 7 | Security hardening | SSRF guard, rate limiting, Secret Manager wiring, bandit/pip-audit CI gates | 1 day |
-| 8 | Launch | README, PyPI publish, SBOM, domain setup, monitoring alerts | 1 day |
+| Phase | Name | Deliverable | Est. Effort | Status |
+|-------|------|-------------|-------------|--------|
+| 0 | Foundation | Repo scaffold, pyproject.toml, CI/CD pipeline, GCP project wiring | 1 day | ✓ done |
+| 1 | Core pipeline | CLI entrypoint, prompt + image modes, Ghostty + iTerm2 serializers, SQLite cache | 2 days | ← **next** |
+| 2 | Provider system | Ollama, LM Studio, Gemini free tier, Claude Haiku adapters; keychain secret mgmt | 1 day | |
+| 3 | Similarity search | MiniLM embeddings, cosine similarity, tiered cache (exact → similarity → LLM) | 1 day | |
+| 4 | Local web server | FastAPI app (`api/`), local SQLite backend, CORS, static file serving | 1 day | |
+| 5 | Web UI (local) | Convert mockup.html → Vite + Tailwind build, wire to local API, live preview | 2 days | |
+| 6 | Community gallery | Publish/browse/like/share, Firebase Auth (GitHub OAuth), gallery API | 2 days | |
+| 7 | Cloud deploy | Dockerize, Cloud Run deploy, Firestore backend swap, Secret Manager | 2 days | |
+| 8 | Security hardening | Rate limiting, Secret Manager wiring, bandit/pip-audit CI gates, Cloud Armor | 1 day | |
+| 9 | Launch | README, PyPI publish, SBOM, domain setup, monitoring alerts | 1 day | |
+
+### Phase 0 — Already Scaffolded (✓)
+
+The following files exist and are non-empty:
+
+| File | State |
+|------|-------|
+| `pyproject.toml` | Complete — hatchling build, all deps, `tty-theme` entry point |
+| `cache/db.py` | Implemented — SQLite CRUD, repository pattern |
+| `generator/validator.py` | Implemented — schema + WCAG contrast check |
+| `generator/serializers/ghostty.py` | Implemented |
+| `generator/serializers/iterm2.py` | Implemented |
+| `generator/serializers/base.py` | Implemented |
+| `security/input_sanitizer.py` | Implemented |
+| `security/ssrf_guard.py` | Implemented |
+| `security/keystore.py` | Implemented |
+| `security/rate_limiter.py` | Implemented |
+| `generator/llm.py` | Partial stub (34 lines) |
+| `cli/main.py` | **Missing — Phase 1** |
+| `modes/prompt_mode.py` | **Missing — Phase 1** |
+| `modes/image_mode.py` | **Missing — Phase 1** |
+| `providers/*.py` | **Missing — Phase 2** |
+| `api/main.py` | **Missing — Phase 4** |
+
+---
+
+## 21. Local Development & Hosting
+
+### 21.1 Quickstart (runs locally in < 5 minutes)
+
+```bash
+# 1. Clone and install
+git clone https://github.com/chruzie/tty-tinkerwithtech
+cd tty-tinkerwithtech
+uv sync
+
+# 2. Run the CLI (Ollama path — zero API cost)
+ollama pull llama3:8b          # one-time, ~4GB
+uv run tty-theme generate --prompt "cyberpunk neon rain"
+
+# 3. Run the CLI with Gemini free tier (no local model needed)
+export GHOSTTY_GEMINI_KEY=AIza...
+uv run tty-theme generate --prompt "tokyo midnight" --provider gemini
+
+# 4. Start the local web server (Phase 4+)
+uv run uvicorn api.main:app --reload --port 8000
+
+# 5. Serve the web UI (no build step needed — uses CDN Tailwind)
+cd web && python -m http.server 3000
+# → open http://localhost:3000
+# → API at http://localhost:8000
+```
+
+### 21.2 Environment Setup
+
+```bash
+# .env.local (never committed — in .gitignore)
+GHOSTTY_PROVIDER=ollama
+GHOSTTY_OLLAMA_URL=http://localhost:11434
+GHOSTTY_OLLAMA_MODEL=llama3:8b
+
+# Optional cloud keys (stored in OS keychain via `tty-theme config set-key`)
+GHOSTTY_GEMINI_KEY=AIza...
+GHOSTTY_ANTHROPIC_KEY=sk-ant-...
+GHOSTTY_OPENAI_KEY=sk-...
+GHOSTTY_GROQ_KEY=gsk_...
+```
+
+### 21.3 Local Architecture
+
+```
+localhost
+├── :8000  FastAPI (uvicorn --reload)
+│          api/main.py
+│          ├── POST /v1/generate      ← theme generation
+│          ├── GET  /v1/themes        ← list cached themes
+│          ├── GET  /v1/health        ← health check
+│          └── GET  /v1/neofetch/:slug ← neofetch info block JSON
+│
+├── :3000  Web UI (python -m http.server OR vite dev)
+│          web/index.html             ← converted from mockup.html
+│          web/js/app.js              ← vanilla JS, calls :8000
+│
+└── SQLite  ~/.local/share/tty-theme/cache.db
+```
+
+### 21.4 File Structure — Full Local Stack
+
+```
+tty-tinkerwithtech/
+├── cli/
+│   └── main.py              # Typer CLI (Phase 1)
+├── modes/
+│   ├── prompt_mode.py       # Prompt pipeline (Phase 1)
+│   └── image_mode.py        # Image pipeline (Phase 1)
+├── generator/
+│   ├── llm.py               # Provider-agnostic LLM client (Phase 1/2)
+│   ├── prompt.py            # System + user prompt templates
+│   ├── validator.py         # ✓ exists
+│   └── serializers/         # ✓ exists (ghostty, iterm2, base)
+├── image/
+│   ├── loader.py            # SSRF-safe image loading (Phase 1)
+│   ├── extractor.py         # k-means clustering (Phase 1)
+│   ├── mapper.py            # palette → theme keys (Phase 1)
+│   └── phash.py             # perceptual hash (Phase 1)
+├── cache/
+│   ├── db.py                # ✓ exists
+│   └── embeddings.py        # MiniLM + cosine sim (Phase 3)
+├── providers/
+│   ├── registry.py          # provider resolution chain (Phase 2)
+│   ├── ollama.py            # (Phase 2)
+│   ├── gemini.py            # (Phase 2)
+│   ├── anthropic.py         # (Phase 2)
+│   ├── openai.py            # (Phase 2)
+│   └── groq.py              # (Phase 2)
+├── security/                # ✓ all exist
+├── api/
+│   ├── main.py              # FastAPI app (Phase 4)
+│   ├── routes/
+│   │   ├── generate.py      # POST /v1/generate
+│   │   ├── themes.py        # GET /v1/themes
+│   │   └── neofetch.py      # GET /v1/neofetch/:slug
+│   └── middleware/
+│       ├── cors.py          # CORS (allow localhost:3000 locally)
+│       └── rate_limit.py    # token bucket middleware
+├── web/
+│   ├── index.html           # converted mockup (Phase 5)
+│   ├── js/app.js            # vanilla JS API client
+│   └── vite.config.js       # Vite build config (Phase 5)
+├── tests/
+│   ├── test_prompt_mode.py
+│   ├── test_image_mode.py
+│   ├── test_api.py          # httpx TestClient (Phase 4)
+│   └── test_security.py
+├── Makefile                 # dev shortcuts (see §21.5)
+├── pyproject.toml           # ✓ exists
+└── .env.local               # gitignored, local secrets
+```
+
+### 21.5 Makefile Targets
+
+```makefile
+.PHONY: dev api ui test lint install
+
+install:
+	uv sync
+
+dev: api ui   ## Start API + UI together (requires tmux or two terminals)
+
+api:          ## Start FastAPI on :8000
+	uv run uvicorn api.main:app --reload --port 8000
+
+ui:           ## Serve web UI on :3000
+	cd web && python -m http.server 3000
+
+test:         ## Run test suite
+	uv run pytest -v
+
+lint:         ## Ruff + bandit
+	uv run ruff check . && uv run ruff format --check . && uv run bandit -r . -c pyproject.toml
+
+generate:     ## Quick test generation (set PROMPT env var)
+	uv run tty-theme generate --prompt "$(PROMPT)"
+```
+
+Run `make dev` in one terminal (or split panes) to have both the API and web UI live with hot-reload.
+
+### 21.6 API Contract (local)
+
+#### `POST /v1/generate`
+
+```json
+// Request
+{
+  "mode": "prompt",              // "prompt" | "image"
+  "prompt": "cyberpunk neon rain",
+  "target": ["ghostty", "iterm2"],
+  "provider": "gemini-default",  // or "ollama", "openai", "local-llm"
+  "local_base_url": null,        // set if provider == "local-llm"
+  "local_model": null
+}
+
+// Response
+{
+  "slug": "cyberpunk-neon-rain",
+  "theme_name": "cyberpunk neon rain",
+  "palette": ["#1a1a2e", ...],   // 16 hex colors
+  "ghostty": "palette = 0=#1a1a2e\n...",
+  "iterm2": "<?xml ...",
+  "tier": 3,
+  "provider_used": "gemini-2.0-flash-lite",
+  "generation_ms": 1400,
+  "cost_usd": 0.0,
+  "cached": false
+}
+```
+
+#### `GET /v1/health`
+
+```json
+{ "status": "ok", "provider": "gemini-default", "cache_size": 247 }
+```
+
+#### `GET /v1/neofetch/:slug`
+
+```json
+{
+  "slug": "cyberpunk-neon-rain",
+  "label": "cyberpunk neon rain",
+  "palette": ["#1a1a2e", ...],
+  "bg": "#0d0d1a",
+  "fg": "#ced4da",
+  "provider": "gemini-2.0-flash-lite",
+  "tier": "generated · 1.4s",
+  "cost": "$0.00"
+}
+```
+
+### 21.7 Phase 1 Implementation Checklist (CLI + Core Pipeline)
+
+The minimum to have `uv run tty-theme generate --prompt "..."` working end-to-end:
+
+- [ ] `cli/main.py` — Typer app with `generate`, `config`, `search`, `neofetch` commands
+- [ ] `modes/prompt_mode.py` — A1–A7 pipeline (sanitize → cache → embed → LLM → validate → cache)
+- [ ] `generator/llm.py` — complete provider-agnostic client (takes provider config, returns raw text)
+- [ ] `generator/prompt.py` — system + user prompt templates
+- [ ] `providers/registry.py` — resolution chain (auto-detect Ollama → cloud fallback)
+- [ ] `providers/ollama.py` — OpenAI-compat adapter for Ollama
+- [ ] `providers/gemini.py` — Gemini API adapter (free tier via `generativelanguage.googleapis.com`)
+- [ ] `image/loader.py`, `image/extractor.py`, `image/mapper.py`, `image/phash.py`
+- [ ] `cache/embeddings.py` — MiniLM + cosine similarity
+
+### 21.8 Phase 4 Implementation Checklist (Local Web Server)
+
+The minimum to have the web UI talking to a real backend:
+
+- [ ] `api/main.py` — FastAPI app with lifespan, CORS middleware (allow `localhost:3000`)
+- [ ] `api/routes/generate.py` — `POST /v1/generate` calling `modes/prompt_mode.py`
+- [ ] `api/routes/themes.py` — `GET /v1/themes` (paginated list from SQLite)
+- [ ] `api/routes/neofetch.py` — `GET /v1/neofetch/:slug`
+- [ ] `web/index.html` — mockup.html converted, API base URL points to `:8000`
+- [ ] `web/js/app.js` — `fetch('/v1/generate', ...)` replaces the fake `showResults()` call
+- [ ] `tests/test_api.py` — httpx `TestClient` smoke tests
 
 ---
 
