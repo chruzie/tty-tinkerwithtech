@@ -140,3 +140,13 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - To patch module-level imports in tests use `patch("modes.image_mode.load_image", ...)` not `patch("image.loader.load_image")` — patch where it's imported, not where it's defined
   - The image mode test is slow (~27s) without mocking because sklearn MiniBatchKMeans runs on real pixel data; always mock `extract_palette` in unit tests
 ---
+
+## 2026-03-15 - US-015
+- Implemented: Rewrote `_check_magic()` with explicit per-format checks; removed `b'\x00\x00\x00'` catch-all; WebP now checks bytes 8-11 == `WEBP` to reject WAV/other RIFF; wrapped `Image.open()` in try/except `UnidentifiedImageError → ValueError`
+- Files changed: image/loader.py, tests/test_image_loader.py (new)
+- **Learnings for future iterations:**
+  - `PIL.UnidentifiedImageError` must be imported from `PIL` directly (`from PIL import UnidentifiedImageError`)
+  - WAV files start with `RIFF` (same as WebP) but bytes 8-11 are `WAVE` not `WEBP` — the 12-byte check catches this
+  - `# noqa: PLR2004` needed on `len(data) >= 12` comparison (ruff magic number rule)
+  - Use `struct.pack("<I", n)` to generate RIFF chunk size bytes in tests
+---

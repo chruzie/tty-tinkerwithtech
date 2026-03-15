@@ -235,7 +235,7 @@
         "Typecheck passes"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "BUG-03 and BUG-14 from audit."
     },
     {
