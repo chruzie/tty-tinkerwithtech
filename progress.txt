@@ -176,3 +176,11 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `typer.echo(..., err=True)` writes to stderr; piped output (`tty-theme generate ... > theme.conf`) only receives stdout
   - `getattr(provider, 'name', 'unknown')` safely handles providers that might not have `.name` attribute
 ---
+
+## 2026-03-15 - US-019
+- Implemented: Replaced single-line "Error: provide --prompt or --image" with multi-line help; added separate `try/except RuntimeError` for `resolve_provider` with actionable Ollama/setup hint; added `except (typer.Exit, SystemExit): raise` to avoid swallowing intentional exits
+- Files changed: cli/main.py
+- **Learnings for future iterations:**
+  - Must re-raise `typer.Exit` and `SystemExit` from within a broad `except Exception` handler, otherwise a `raise typer.Exit(1)` inside the try block gets silently swallowed
+  - Nesting the provider resolution in its own try/except allows different error messages per failure mode
+---

@@ -292,7 +292,7 @@
         "Typecheck passes"
       ],
       "priority": 19,
-      "passes": false,
+      "passes": true,
       "notes": "CLI-1 and CLI-2 from UX audit."
     },
     {
