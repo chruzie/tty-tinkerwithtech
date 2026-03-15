@@ -16,6 +16,7 @@ _SERIALIZERS = {
     "ghostty": GhosttySerializer(),
     "iterm2": ITerm2Serializer(),
 }
+_CACHE_SERIALIZER = GhosttySerializer()  # canonical on-disk format
 
 _MAX_RETRIES = 3
 _SPEND_CAP_USD = 1.0  # daily cap default
@@ -58,7 +59,8 @@ def generate_from_prompt(
     if not skip_cache:
         cached = repo.get_by_hash(query_hash)
         if cached:
-            return cached["theme_data"]
+            palette = validate_theme(cached["theme_data"])
+            return serializer.serialize(palette)
 
     # A4: Similarity search (tier 2) — requires embeddings module
     if not skip_cache:
@@ -70,7 +72,8 @@ def generate_from_prompt(
             if similar_id is not None:
                 row = repo.get_by_id(similar_id)
                 if row:
-                    return row["theme_data"]
+                    palette = validate_theme(row["theme_data"])
+                    return serializer.serialize(palette)
         except ImportError:
             pass  # sentence-transformers not installed, skip tier 2
 
@@ -90,6 +93,7 @@ def generate_from_prompt(
     client = LLMClient()
     prompt = build_prompt(clean_query)
     theme_str: str | None = None
+    palette: dict[str, str] = {}
     last_error: Exception | None = None
 
     for attempt in range(_MAX_RETRIES):
@@ -117,10 +121,13 @@ def generate_from_prompt(
     except ImportError:
         pass
 
+    # Cache always stores Ghostty format (canonical) so validate_theme can re-parse
+    # on future cache hits regardless of what target was requested.
+    cached_data = _CACHE_SERIALIZER.serialize(palette)
     cost = getattr(provider, "cost_per_1k_tokens", 0.0) * 0.5  # rough estimate
     repo.save_theme(
         query_hash=query_hash,
-        theme_data=theme_str,
+        theme_data=cached_data,
         input_type="prompt",
         query_raw=clean_query,
         embedding=embedding,

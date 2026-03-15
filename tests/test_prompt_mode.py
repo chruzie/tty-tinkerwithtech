@@ -28,12 +28,30 @@ class TestPromptMode:
 
         from modes.prompt_mode import generate_from_prompt
         from security.input_sanitizer import sanitize_prompt
+
         q = sanitize_prompt("ocean sunset")
         qh = hashlib.sha256(q.encode()).hexdigest()
-        tmp_repo.save_theme(query_hash=qh, theme_data="cached-result", input_type="prompt")
+        # Cache must contain a valid Ghostty-format theme (canonical format)
+        tmp_repo.save_theme(query_hash=qh, theme_data=_VALID_THEME, input_type="prompt")
 
         result = generate_from_prompt("ocean sunset", repo=tmp_repo)
-        assert result == "cached-result"
+        assert "palette" in result
+
+    def test_cache_hit_reserializes_to_requested_target(self, tmp_repo):
+        """Tier-1 cache hit with Ghostty-cached data should return iTerm2 format when asked."""
+        import hashlib
+
+        from modes.prompt_mode import generate_from_prompt
+        from security.input_sanitizer import sanitize_prompt
+
+        q = sanitize_prompt("ocean sunset")
+        qh = hashlib.sha256(q.encode()).hexdigest()
+        # Seed cache in Ghostty (canonical) format
+        tmp_repo.save_theme(query_hash=qh, theme_data=_VALID_THEME, input_type="prompt")
+
+        result = generate_from_prompt("ocean sunset", target="iterm2", repo=tmp_repo)
+        # iTerm2 output is XML plist
+        assert "<?xml" in result or "<plist" in result or "dict" in result
 
     def test_llm_called_on_cache_miss(self, tmp_repo):
         from modes.prompt_mode import generate_from_prompt
