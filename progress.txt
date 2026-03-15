@@ -184,3 +184,11 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - Must re-raise `typer.Exit` and `SystemExit` from within a broad `except Exception` handler, otherwise a `raise typer.Exit(1)` inside the try block gets silently swallowed
   - Nesting the provider resolution in its own try/except allows different error messages per failure mode
 ---
+
+## 2026-03-15 - US-020
+- Implemented: `_install_theme()` checks `dest.exists()` before writing; returns `None` if exists and `force=False`; added `force: bool = False` parameter; added `--force/-f` flag; added target-specific activation hints
+- Files changed: cli/main.py, tests/test_cli_install.py
+- **Learnings for future iterations:**
+  - `_install_theme` return type changed from `Path` to `Path | None` — call sites must check for None before using result
+  - Activation hint uses the same safe_name transform (replace+lower) so it matches the installed filename
+---
