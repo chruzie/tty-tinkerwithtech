@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
@@ -68,11 +68,22 @@ app.add_middleware(AuditLogMiddleware)
 
 # ── Prometheus metrics ─────────────────────────────────────────────────────────
 
+
+def _metrics_auth(request: Request) -> None:
+    """Require Authorization: Bearer <METRICS_TOKEN> when the env var is set."""
+    token = os.environ.get("METRICS_TOKEN")
+    if not token:
+        return  # local dev — no auth required
+    auth = request.headers.get("Authorization", "")
+    if auth != f"Bearer {token}":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
 try:
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest  # type: ignore[import]
 
     @app.get("/metrics", include_in_schema=False)
-    async def metrics():
+    async def metrics(request: Request, _auth: None = Depends(_metrics_auth)):
         from fastapi.responses import Response
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
