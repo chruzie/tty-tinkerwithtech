@@ -141,7 +141,7 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "PERF-H1 from audit. api/main.py lines 114-158. Simplest fix: sync def, FastAPI auto-threads."
     },
     {

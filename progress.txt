@@ -85,3 +85,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `monkeypatch.delenv("KEY", raising=False)` cleanly handles the case where the env var may or may not exist
   - Leading underscore (`_PRIVATE_KEY`) is a valid secret name per the regex — don't be surprised if test for that passes
 ---
+
+## 2026-03-15 - US-009
+- Implemented: Changed `/v1/generate` from `async def` to `def`; FastAPI auto-delegates sync endpoints to a thread pool
+- Files changed: api/main.py
+- **Learnings for future iterations:**
+  - No `await` calls existed in the generate endpoint body — it was calling sync functions (SQLite, LLM via httpx.Client) inside `async def`, blocking the event loop
+  - Simply removing `async` is the correct and complete fix; no other code changes required
+  - FastAPI uses `anyio.to_thread.run_sync` for sync endpoint functions automatically
+---
