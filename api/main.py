@@ -33,6 +33,20 @@ async def lifespan(app: FastAPI):
     # Initialise DB on startup
     repo = _get_repo()
     app.state.repo = repo
+
+    # Pre-load MiniLM embedding model so first request has no cold-start delay
+    try:
+        import cache.embeddings as _embeddings
+
+        app.state.embedding_model = _embeddings._get_model()
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "sentence-transformers not available; tier-2 similarity cache disabled"
+        )
+        app.state.embedding_model = None
+
     yield
 
 
