@@ -738,7 +738,7 @@ SQLite is sufficient. Single-user, zero network overhead. Handles thousands of c
 
 ### 8.2 Production Architecture — Google Cloud (Zero Idle Cost)
 
-**GCP Project:** `tinkerwithtech-214914`
+**GCP Project:** `YOUR_GCP_PROJECT_ID`
 **Region:** `us-central1`
 **Design principle:** Every component scales to zero. No idle billing.
 
@@ -787,7 +787,7 @@ User (browser / CLI)
                                 └──────────────────────┘
 ```
 
-**Enabled APIs on tinkerwithtech-214914 (validated 2026-03-15):**
+**Enabled APIs on YOUR_GCP_PROJECT_ID (validated 2026-03-15):**
 
 | API | Purpose | Status |
 |-----|---------|--------|
@@ -1328,13 +1328,13 @@ No service account has `roles/owner` or `roles/editor`. Principle of least privi
 All secrets in Secret Manager. Cloud Run accesses via mounted env vars (never baked into image):
 
 ```bash
-gcloud secrets create GEMINI_API_KEY --project=tinkerwithtech-214914
-gcloud secrets create GITHUB_CLIENT_ID --project=tinkerwithtech-214914
-gcloud secrets create GITHUB_CLIENT_SECRET --project=tinkerwithtech-214914
+gcloud secrets create GEMINI_API_KEY --project=YOUR_GCP_PROJECT_ID
+gcloud secrets create GITHUB_CLIENT_ID --project=YOUR_GCP_PROJECT_ID
+gcloud secrets create GITHUB_CLIENT_SECRET --project=YOUR_GCP_PROJECT_ID
 
 # Grant Cloud Run service account access
 gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
-  --member="serviceAccount:tty-theme-api@tinkerwithtech-214914.iam.gserviceaccount.com" \
+  --member="serviceAccount:tty-theme-api@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 ```
 

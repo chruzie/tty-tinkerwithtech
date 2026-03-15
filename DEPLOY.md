@@ -8,7 +8,7 @@
 
 ```bash
 gcloud auth login
-gcloud config set project tinkerwithtech-214914
+gcloud config set project YOUR_GCP_PROJECT_ID
 ```
 
 ---
@@ -20,16 +20,16 @@ gcloud iam service-accounts create tty-theme-api \
   --display-name="tty-theme API"
 
 # Grant only what's needed — no owner/editor roles
-gcloud projects add-iam-policy-binding tinkerwithtech-214914 \
-  --member="serviceAccount:tty-theme-api@tinkerwithtech-214914.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding YOUR_GCP_PROJECT_ID \
+  --member="serviceAccount:tty-theme-api@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/datastore.user"
 
-gcloud projects add-iam-policy-binding tinkerwithtech-214914 \
-  --member="serviceAccount:tty-theme-api@tinkerwithtech-214914.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding YOUR_GCP_PROJECT_ID \
+  --member="serviceAccount:tty-theme-api@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 
-gcloud projects add-iam-policy-binding tinkerwithtech-214914 \
-  --member="serviceAccount:tty-theme-api@tinkerwithtech-214914.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding YOUR_GCP_PROJECT_ID \
+  --member="serviceAccount:tty-theme-api@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/monitoring.metricWriter"
 ```
 
@@ -48,8 +48,8 @@ echo -n "your-github-client-secret" | gcloud secrets create GITHUB_CLIENT_SECRET
 ## Build & Push Docker Image
 
 ```bash
-docker build -t gcr.io/tinkerwithtech-214914/tty-theme-api:latest .
-docker push gcr.io/tinkerwithtech-214914/tty-theme-api:latest
+docker build -t gcr.io/YOUR_GCP_PROJECT_ID/tty-theme-api:latest .
+docker push gcr.io/YOUR_GCP_PROJECT_ID/tty-theme-api:latest
 ```
 
 ---
@@ -58,15 +58,15 @@ docker push gcr.io/tinkerwithtech-214914/tty-theme-api:latest
 
 ```bash
 gcloud run deploy tty-theme-api \
-  --image=gcr.io/tinkerwithtech-214914/tty-theme-api:latest \
+  --image=gcr.io/YOUR_GCP_PROJECT_ID/tty-theme-api:latest \
   --region=us-central1 \
-  --project=tinkerwithtech-214914 \
+  --project=YOUR_GCP_PROJECT_ID \
   --min-instances=0 \
   --max-instances=10 \
   --memory=256Mi \
   --concurrency=80 \
-  --service-account=tty-theme-api@tinkerwithtech-214914.iam.gserviceaccount.com \
-  --set-env-vars=ENVIRONMENT=production,GCP_PROJECT=tinkerwithtech-214914,FIRESTORE_PROJECT=tinkerwithtech-214914 \
+  --service-account=tty-theme-api@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com \
+  --set-env-vars=ENVIRONMENT=production,GCP_PROJECT=YOUR_GCP_PROJECT_ID,FIRESTORE_PROJECT=YOUR_GCP_PROJECT_ID \
   --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest \
   --set-secrets=GITHUB_CLIENT_ID=GITHUB_CLIENT_ID:latest \
   --set-secrets=GITHUB_CLIENT_SECRET=GITHUB_CLIENT_SECRET:latest \
@@ -79,7 +79,7 @@ gcloud run deploy tty-theme-api \
 
 ```bash
 cd web && npm run build
-firebase deploy --only hosting --project tinkerwithtech-214914
+firebase deploy --only hosting --project YOUR_GCP_PROJECT_ID
 ```
 
 ---
@@ -88,7 +88,7 @@ firebase deploy --only hosting --project tinkerwithtech-214914
 
 ```bash
 # Verify domain ownership first at console.firebase.google.com
-firebase hosting:channel:deploy production --project tinkerwithtech-214914
+firebase hosting:channel:deploy production --project YOUR_GCP_PROJECT_ID
 ```
 
 ---
@@ -115,7 +115,7 @@ gcloud alpha monitoring policies create \
 
 Deployed automatically via `firestore.indexes.json`:
 ```bash
-firebase deploy --only firestore:indexes --project tinkerwithtech-214914
+firebase deploy --only firestore:indexes --project YOUR_GCP_PROJECT_ID
 ```
 
 ---

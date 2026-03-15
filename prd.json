@@ -526,7 +526,7 @@
         "docker-compose.yml updated: 'api' service builds from Dockerfile, mounts .env, depends_on firebase-emulator, sets FIRESTORE_EMULATOR_HOST=firebase-emulator:8080 and FIREBASE_AUTH_EMULATOR_HOST=firebase-emulator:9099",
         ".dockerignore: .env, *.pyc, __pycache__, .git, tests/, .firebase-data/",
         "'docker compose build && docker compose up api' starts the API; 'curl localhost:8000/health' returns 200",
-        "DEPLOY.md documents the future Cloud Run deploy command for reference (not executed): gcloud run deploy tty-theme-api --region=us-central1 --project=tinkerwithtech-214914 --min-instances=0 --max-instances=10 --memory=256Mi --concurrency=80 --set-secrets=GEMINI_API_KEY=...",
+        "DEPLOY.md documents the future Cloud Run deploy command for reference (not executed): gcloud run deploy tty-theme-api --region=us-central1 --project=YOUR_GCP_PROJECT_ID --min-instances=0 --max-instances=10 --memory=256Mi --concurrency=80 --set-secrets=GEMINI_API_KEY=...",
         "cloudbuild.yaml stub: steps run pip-audit, bandit, ruff, pytest \u2014 intentionally omits 'gcloud run deploy' step (placeholder comment: '# TODO: uncomment for production deploy')",
         "ruff check passes"
       ],
@@ -838,7 +838,7 @@
         "variables.tf: project_id, region (default us-central1), environment (default development), app_name (default tty-theme)",
         "main.tf: google provider configured with project=var.project_id, region=var.region",
         "GCS backend block in main.tf with bucket=tty-theme-tfstate, prefix=terraform/state (backend=false for local validate)",
-        "terraform.tfvars.example: project_id=tinkerwithtech-214914, region=us-central1, environment=production",
+        "terraform.tfvars.example: project_id=YOUR_GCP_PROJECT_ID, region=us-central1, environment=production",
         "'terraform init -backend=false && terraform validate' passes with no errors",
         "README section in DEPLOY.md: 'cd terraform && terraform init && terraform plan -var-file=terraform.tfvars'"
       ],

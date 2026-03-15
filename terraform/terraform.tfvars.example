@@ -1,7 +1,7 @@
 # Copy to terraform.tfvars and fill in values.
 # terraform.tfvars is gitignored — never commit it.
 
-project_id  = "tinkerwithtech-214914"
+project_id  = "your-gcp-project-id"
 region      = "us-central1"
 environment = "production"
 app_name    = "tty-theme"

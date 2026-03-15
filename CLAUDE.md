@@ -53,12 +53,24 @@ User Input (prompt or image)
         (key=value)    (XML plist)
 ```
 
-### Provider Chain (cost-ordered, first available wins)
+### Provider Chain (cost-ordered, 429-aware auto-fallback)
+
+One `OpenAICompatProvider` class handles all providers — they all speak `POST /v1/chat/completions`.
 
 ```
-Ollama (local) → LM Studio (local) → llamafile (local) →
-Gemini Flash → Groq (free tier) → Claude Haiku → GPT-4o-mini → Mistral
+Local (no key needed):
+  Ollama (11434) → LM Studio (1234) → llamafile (8080)
+
+Free cloud (key required, 429 → auto-fallback to next):
+  Groq → Gemini 2.0 Flash
+
+Paid optional fallback:
+  OpenAI gpt-4o-mini → Mistral small
 ```
+
+Key function: `providers/registry.py::generate_with_fallback()` — catches HTTP 429 and transparently tries the next provider. Non-429 errors propagate immediately.
+
+To force a provider: `tty-theme generate --prompt "..." --provider groq`
 
 ### Tiered Cache (prompt mode)
 
@@ -77,16 +89,21 @@ Image mode uses **pHash** as cache key instead.
 | `modes/image_mode.py` | Full image pipeline |
 | `generator/llm.py` | Provider-agnostic LLM client |
 | `generator/validator.py` | Schema + WCAG contrast validation |
-| `serializers/ghostty.py` | Ghostty key=value output |
-| `serializers/iterm2.py` | iTerm2 XML plist output |
-| `serializers/base.py` | `ThemeSerializer` abstract base |
+| `generator/serializers/ghostty.py` | Ghostty key=value output |
+| `generator/serializers/iterm2.py` | iTerm2 XML plist output |
+| `generator/serializers/base.py` | `ThemeSerializer` abstract base |
 | `image/loader.py` | Safe image loading (SSRF guard, magic bytes) |
 | `image/extractor.py` | k-means color clustering |
 | `image/phash.py` | Perceptual hash |
-| `cache/db.py` | SQLite CRUD (repository pattern, swappable to Postgres) |
+| `cache/db.py` | SQLite CRUD (repository pattern) |
+| `cache/firestore_db.py` | Firestore repository (same interface, cloud/emulator) |
 | `cache/embeddings.py` | MiniLM local embeddings + cosine similarity |
-| `providers/` | One file per LLM provider adapter |
+| `providers/openai_compat.py` | Single provider class + CATALOGUE for all LLMs |
+| `providers/registry.py` | Health checks, provider resolution, 429 fallback |
+| `api/main.py` | FastAPI app (Cloud Run target) |
+| `api/middleware.py` | Rate limiting (token bucket) + audit log |
 | `security/keystore.py` | OS keychain key management (`keyring` lib) |
+| `security/secrets.py` | `get_secret()` — `.env` in dev, Secret Manager in prod |
 | `security/ssrf_guard.py` | RFC1918 + loopback blocklist for remote URLs |
 | `security/input_sanitizer.py` | Prompt sanitization, unicode normalization |
 | `themes/index.json` | ~50 pre-seeded community themes (MIT/CC0) |
@@ -94,9 +111,35 @@ Image mode uses **pHash** as cache key instead.
 ### Data Storage
 
 **CLI mode:** SQLite, local at `~/.local/share/tty-theme/cache.db`
-**API/web mode:** PostgreSQL + pgvector (similarity), Redis (cache + rate limits)
+**API/web mode:** Firestore (via emulator locally, Cloud Firestore in prod)
+
+Switch is env-var driven: if `FIRESTORE_PROJECT` is set → `FirestoreThemeRepository`; else → `ThemeRepository` (SQLite).
 
 Embeddings stored as **JSON arrays** (`json.dumps(vector.tolist())`). API keys stored in **OS keychain** (never config files).
+
+### Local Development Stack (Docker Compose)
+
+```
+docker compose up
+```
+
+| Service | Port | GCP Equivalent |
+|---------|------|----------------|
+| `api` | 8000 | Cloud Run |
+| `firebase-emulator` (Firestore) | 8080 | Cloud Firestore |
+| `firebase-emulator` (Auth) | 9099 | Firebase Auth |
+| `firebase-emulator` (UI) | 4000 | — |
+| `prometheus` | 9090 | Cloud Monitoring |
+
+`FIRESTORE_EMULATOR_HOST=localhost:8080` auto-routes the Firestore SDK to the emulator — no code changes between local and prod.
+
+### Secrets Pattern
+
+`security/secrets.py::get_secret(name)`:
+- `ENVIRONMENT=development` (or no `GCP_PROJECT`) → reads from `.env` via python-dotenv
+- Production → reads from Google Cloud Secret Manager
+
+Same call site everywhere; no `if dev / else prod` scattered through the codebase.
 
 ---
 
@@ -114,18 +157,20 @@ Users can publish themes to `tty-theme.dev`. Gallery features:
 ## CLI Reference
 
 ```bash
-tty-theme config setup                          # first-run wizard
+tty-theme config setup                          # first-run wizard (saves keys to OS keychain)
+tty-theme config status                         # provider availability, cache stats, spend
 tty-theme generate --prompt "tokyo midnight"    # prompt → Ghostty (default)
 tty-theme generate --prompt "..." --target iterm2
+tty-theme generate --prompt "..." --provider groq  # force specific provider
 tty-theme generate --image ./photo.jpg --target ghostty
-tty-theme generate --image ./photo.jpg --refine # + LLM refinement pass
+tty-theme generate --image ./photo.jpg --refine    # + LLM refinement pass
 tty-theme generate --prompt "..." --install --name "my-theme"
 tty-theme search "ocean"
 tty-theme browse --sort downloads
 tty-theme install cyberpunk-neon-rain --target ghostty
 tty-theme publish "my-theme" --target ghostty --target iterm2
 tty-theme share "my-theme"
-tty-theme config status                         # spend, provider, cache stats
+tty-theme seed                                  # load community themes into local cache
 ```
 
 ---
@@ -133,10 +178,14 @@ tty-theme config status                         # spend, provider, cache stats
 ## Development Commands
 
 ```bash
-# Install deps
+# Setup
+cp .env.example .env
 uv sync
 
-# Run CLI
+# Full local stack (API + Firebase Emulator + Prometheus)
+docker compose up
+
+# CLI only (no Docker needed for local Ollama/basic use)
 uv run tty-theme --help
 
 # Tests
@@ -150,28 +199,48 @@ uv run ruff format .
 uv run pip-audit
 uv run bandit -r . -c pyproject.toml
 
+# Terraform (local validation only — never apply locally)
+cd terraform
+terraform init -backend=false
+terraform validate
+terraform plan -var-file=terraform.tfvars  # dry-run only
+
 # Open mockup in browser
 open mockup.html
 ```
 
 ---
 
+## Terraform IaC
+
+`terraform/` provisions the full GCP stack: IAM, Artifact Registry, Secret Manager, Firestore, Cloud Run, Cloud Monitoring. See `DEPLOY.md` for the production deploy workflow.
+
+**Never run `terraform apply` locally.** All prod deployments go through Cloud Build CI (`cloudbuild.yaml`).
+
+Secret *values* are never in Terraform state — only shells are declared. Values are set via `gcloud secrets versions add` (see `DEPLOY.md`).
+
+---
+
 ## Security Rules (non-negotiable)
 
 - **Embeddings use JSON serialization** — `json.dumps(vector.tolist())` / `json.loads()` only. Never use binary object serialization formats on external data.
-- **No API keys in config files** — OS keychain (`keyring`) or env vars only
-- **No raw IP in logs** — store `SHA256(IP)` only
+- **No API keys in config files** — OS keychain (`keyring`) for CLI, Secret Manager for API. Never `.env` in prod.
+- **No raw IP in logs** — store `SHA256(IP)[:16]` only
 - **SSRF guard on all remote URLs** — block RFC1918, loopback, link-local before fetching
 - **Magic-byte validation on images** — never trust file extensions
 - **Structural output validation** — LLM output accepted only if it parses as valid hex color key=value pairs
 - **`bandit` S-rules enforced** — `eval`, `exec`, and unsafe deserialization are banned via ruff/bandit config
+- **No GCP project IDs, real credentials, or `.env` files committed** — `.gitignore` covers `.env`, `*.tfvars`, `*.tfstate`
 
 ---
 
 ## Key Design Decisions
 
-- **Repository pattern** in `cache/db.py` — SQLite for CLI, swapped to Postgres for hosted API without changing callers
-- **Serializer pattern** in `serializers/` — adding a new terminal target = one new file implementing `ThemeSerializer`
-- **Provider chain** — resolves local-first, cloud as fallback; user never pays if Ollama is running
+- **Single provider class** — `OpenAICompatProvider` handles all LLMs; switching providers = changing CATALOGUE entry, not code
+- **429 auto-fallback** — `generate_with_fallback()` in `providers/registry.py` tries next provider on throttle; user gets a theme even when one service is down
+- **Repository pattern** — `ThemeRepository` (SQLite) and `FirestoreThemeRepository` share same interface; swapped via env var at runtime
+- **Serializer pattern** in `generator/serializers/` — adding a new terminal target = one new file implementing `ThemeSerializer`
+- **Local-first emulator parity** — `docker compose up` gives exact same stack as GCP; `FIRESTORE_EMULATOR_HOST` makes SDK auto-route
+- **`security/secrets.py` abstraction** — same `get_secret(name)` call works in dev (`.env`) and prod (Secret Manager)
 - **pHash for images** — near-identical images share a cached theme without any LLM call
 - **JSON embeddings** — avoids unsafe deserialization vulnerabilities on any external data
