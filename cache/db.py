@@ -49,7 +49,8 @@ class ThemeRepository:
                     date      TEXT NOT NULL,
                     provider  TEXT NOT NULL,
                     calls     INTEGER DEFAULT 0,
-                    cost_usd  REAL DEFAULT 0.0
+                    cost_usd  REAL DEFAULT 0.0,
+                    UNIQUE(date, provider)
                 );
 
                 CREATE TABLE IF NOT EXISTS audit_log (
@@ -136,24 +137,18 @@ class ThemeRepository:
         return result
 
     def log_cost(self, provider: str, cost_usd: float) -> None:
-        """Upsert into cost_log for today."""
+        """Upsert into cost_log for today (atomic, no TOCTOU race)."""
         today = date.today().isoformat()
         with self._connect() as conn:
-            existing = conn.execute(
-                "SELECT id FROM cost_log WHERE date = ? AND provider = ?",
-                (today, provider),
-            ).fetchone()
-            if existing:
-                conn.execute(
-                    "UPDATE cost_log SET calls = calls + 1, cost_usd = cost_usd + ? "
-                    "WHERE date = ? AND provider = ?",
-                    (cost_usd, today, provider),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO cost_log (date, provider, calls, cost_usd) VALUES (?, ?, 1, ?)",
-                    (today, provider, cost_usd),
-                )
+            conn.execute(
+                """
+                INSERT INTO cost_log (date, provider, calls, cost_usd)
+                VALUES (?, ?, 1, ?)
+                ON CONFLICT(date, provider)
+                DO UPDATE SET calls = calls + 1, cost_usd = cost_usd + excluded.cost_usd
+                """,
+                (today, provider, cost_usd),
+            )
 
     def log_audit(
         self,

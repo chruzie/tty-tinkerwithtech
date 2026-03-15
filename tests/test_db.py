@@ -82,6 +82,22 @@ def test_log_cost_and_daily_spend(repo: ThemeRepository) -> None:
     assert abs(total - 0.002) < 1e-9
 
 
+def test_log_cost_upsert_is_atomic(repo: ThemeRepository) -> None:
+    """ON CONFLICT upsert must accumulate calls and cost without duplicates."""
+    repo.log_cost("groq", 0.001)
+    repo.log_cost("groq", 0.001)
+    repo.log_cost("groq", 0.001)
+    total = repo.get_daily_spend()
+    assert abs(total - 0.003) < 1e-9
+
+    # Verify the row count is exactly 1 (no duplicates)
+    import sqlite3
+
+    with sqlite3.connect(repo.db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM cost_log WHERE provider = 'groq'").fetchone()[0]
+    assert count == 1
+
+
 def test_list_themes(repo: ThemeRepository) -> None:
     for i in range(3):
         repo.save_theme(
