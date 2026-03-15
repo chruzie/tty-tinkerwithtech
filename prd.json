@@ -265,7 +265,7 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "BUG-08 from audit. api/main.py lines 135 and 145."
     },
     {

@@ -159,3 +159,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `excluded.cost_usd` refers to the value that WOULD have been inserted — standard UPSERT pattern
   - `init_db()` uses `CREATE TABLE IF NOT EXISTS` — adding a UNIQUE constraint to an already-created table requires `DROP TABLE IF EXISTS` or a migration; for new installs the DDL change is enough
 ---
+
+## 2026-03-15 - US-017
+- Implemented: Changed `generate_from_prompt` and `generate_from_image` return type to `tuple[str, int]`; updated API to unpack `theme_str, tier = ...`; updated CLI to unpack `theme_str, _ = ...`; also applied canonical-format caching to image_mode
+- Files changed: modes/prompt_mode.py, modes/image_mode.py, api/main.py, cli/main.py, tests/test_prompt_mode.py
+- **Learnings for future iterations:**
+  - Always update CLI callers when changing mode function signatures — CLI uses `theme_str` only, so `theme_str, _ = ...` is clean
+  - Module-level constant (`_CACHE_SERIALIZER`) must be placed AFTER all imports to avoid E402; ruff enforces this strictly
+  - The image mode also needed the canonical-cache fix (US-013 only fixed prompt_mode) — apply the pattern consistently
+---
