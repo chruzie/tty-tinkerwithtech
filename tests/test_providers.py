@@ -7,7 +7,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+def _clear_health_cache():
+    """Clear the module-level health cache between tests."""
+    from providers import openai_compat
+
+    openai_compat._health_cache.clear()
+
+
 class TestOpenAICompatProvider:
+    def setup_method(self):
+        _clear_health_cache()
+
     def test_local_health_true(self):
         from providers.openai_compat import OpenAICompatProvider
 
@@ -44,6 +54,28 @@ class TestOpenAICompatProvider:
         with patch.object(p._client, "post", return_value=mock_resp):
             assert p.generate({"system": "s", "user": "u"}) == "palette = 0 = #000000"
 
+    def test_health_check_cached_within_ttl(self):
+        from providers.openai_compat import OpenAICompatProvider
+
+        p = OpenAICompatProvider("ollama", "http://localhost:11434/v1", "llama3", is_local=True)
+        with patch.object(p._client, "get", return_value=MagicMock(status_code=200)) as mock_get:
+            p.health_check()  # first call — hits httpx
+            p.health_check()  # second call within TTL — should NOT hit httpx again
+        assert mock_get.call_count == 1, "health_check should use cached result within TTL"
+
+    def test_health_check_rechecks_after_ttl(self):
+        import time
+
+        from providers.openai_compat import OpenAICompatProvider, _health_cache
+
+        p = OpenAICompatProvider("ollama", "http://localhost:11434/v1", "llama3", is_local=True)
+        cache_key = f"{p.name}:{p._base_url}"
+        # Seed cache with an expired entry
+        _health_cache[cache_key] = (True, time.monotonic() - 35.0)
+        with patch.object(p._client, "get", return_value=MagicMock(status_code=200)) as mock_get:
+            p.health_check()  # should re-check because entry is expired
+        assert mock_get.call_count == 1
+
     def test_client_reused_across_calls(self):
         from providers.openai_compat import OpenAICompatProvider
 
@@ -59,6 +91,9 @@ class TestOpenAICompatProvider:
 
 
 class TestRegistry:
+    def setup_method(self):
+        _clear_health_cache()
+
     def _mock_client(self, get_status: int = 200, get_raises: Exception | None = None):
         """Return a mock httpx.Client whose .get() returns the given status."""
         mock = MagicMock()
