@@ -112,3 +112,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - Broad `except Exception` in lifespan is intentional — startup should not crash the API if an optional dependency is missing; use `# noqa: BLE001` to suppress ruff
   - `app.state.embedding_model = None` ensures downstream code can check `if app.state.embedding_model` before using it
 ---
+
+## 2026-03-15 - US-012
+- Implemented: Added `_health_cache: dict[str, tuple[bool, float]]` at module level; `health_check()` checks cache key `{name}:{base_url}` before calling httpx; uses `time.monotonic()` for 30s TTL
+- Files changed: providers/openai_compat.py, tests/test_providers.py
+- **Learnings for future iterations:**
+  - Module-level `_health_cache` persists across provider instances — call `_health_cache.clear()` in test `setup_method` to prevent cross-test pollution
+  - `time.monotonic()` is preferred over `time.time()` for TTL because it never goes backwards
+  - Cache key should be `f"{name}:{base_url}"` not just `name` to handle hypothetical same-name different-URL providers
+---
