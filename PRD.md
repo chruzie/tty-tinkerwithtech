@@ -357,50 +357,95 @@ API keys are **never written to `config.toml`**. They live exclusively in the OS
 
 SQLite is sufficient. Single-user, zero network overhead. Handles thousands of cached themes with sub-millisecond lookups.
 
-### 8.2 Hosted API Scaling Path
+### 8.2 Production Architecture — Google Cloud (zero idle cost)
+
+**GCP Project:** `tinkerwithtech-214914`
+**Design principle:** every component scales to zero — no idle billing.
 
 ```
-                    ┌──────────────────────────────────┐
-                    │     Load Balancer + WAF           │
-                    │  (Caddy / Nginx + rate limiting)  │
-                    └──────────────┬───────────────────┘
-                                   │
-                   ┌───────────────▼────────────────┐
-                   │      API Workers (stateless)    │
-                   │   FastAPI + uvicorn, N replicas │
-                   └──────┬──────────────┬──────────┘
-                          │              │
-             ┌────────────▼──┐   ┌───────▼──────────┐
-             │  Redis Cache  │   │   PostgreSQL DB   │
-             │ (themes,      │   │ (themes, audit    │
-             │  rate limits) │   │  log, keys)       │
-             └───────────────┘   └──────────────────┘
-                          │
-             ┌────────────▼───────────────────┐
-             │         LLM Gateway            │
-             │  Routes to: Ollama cluster     │
-             │  OR cloud API (spend-capped)   │
-             └────────────────────────────────┘
+  User (browser / CLI)
+         │
+         ▼
+  ┌─────────────────────────┐
+  │   Firebase Hosting      │  Static web UI + CDN (free tier)
+  │   tty-theme.dev         │
+  └───────────┬─────────────┘
+              │ API calls
+              ▼
+  ┌─────────────────────────┐
+  │   Cloud Run             │  FastAPI container
+  │   (scales to zero)      │  min-instances=0, pay per request
+  └──────┬──────────────────┘
+         │
+    ┌────┴──────────────────────────────┐
+    │                                   │
+    ▼                                   ▼
+┌──────────────────┐        ┌──────────────────────┐
+│   Firestore      │        │  Vertex AI           │
+│  (Native DB +    │        │  Gemini Flash        │
+│   Vector Search) │        │  (pay per token)     │
+│                  │        └──────────────────────┘
+│  Collections:    │
+│  - themes        │        ┌──────────────────────┐
+│  - users         │        │  Secret Manager      │
+│  - likes         │        │  API keys, DB creds  │
+│  - rate_limits   │        └──────────────────────┘
+└──────────────────┘
+         │
+    ┌────▼──────────────────┐
+    │  Firebase Auth        │
+    │  (GitHub OAuth)       │
+    └───────────────────────┘
 ```
+
+**Enabled APIs (validated 2026-03-15):**
+
+| API | Service | Status |
+|-----|---------|--------|
+| `run.googleapis.com` | Cloud Run | ✓ enabled |
+| `firestore.googleapis.com` | Firestore | ✓ enabled |
+| `aiplatform.googleapis.com` | Vertex AI | ✓ enabled |
+| `secretmanager.googleapis.com` | Secret Manager | ✓ enabled |
+| `identitytoolkit.googleapis.com` | Firebase Auth | ✓ enabled |
+| `firebase.googleapis.com` | Firebase Hosting | ✓ enabled |
+| `cloudbuild.googleapis.com` | Cloud Build (CI/CD) | ✓ enabled |
+| `artifactregistry.googleapis.com` | Container Registry | ✓ enabled |
+| `monitoring.googleapis.com` | Cloud Monitoring | ✓ enabled |
+
+**Why no Cloud SQL or Redis?**
+Both have a minimum idle cost (~$7–15/mo each) even with zero traffic. Firestore's `FindNearest` (cosine vector search, GA 2024) replaces pgvector. Firestore document counters replace Redis rate-limit buckets. Total idle cost = **$0**.
 
 **Key scaling properties:**
-- Workers are stateless — all state in Redis + Postgres.
-- Redis handles theme cache + rate limit token buckets.
-- Similarity search scales via `pgvector` ANN index on Postgres.
-- Horizontal scale: add worker replicas. No coordination required.
-- LLM calls isolated behind gateway with per-hour spend cap.
+- Cloud Run: min-instances=0, scales on demand, 0→N in ~2s cold start.
+- Firestore: serverless, no provisioning, pays per read/write operation.
+- Vertex AI Gemini Flash: pay per token, no reserved capacity.
+- Rate limiting: Firestore counter doc per IP, TTL-expired via Cloud Run logic.
+- Similarity search: Firestore `FindNearest` with stored embedding vectors.
 
-### 8.3 SQLite → Postgres Migration Path
+### 8.3 SQLite → Firestore Migration Path
 
-The `cache/db.py` repository pattern abstracts storage. CLI uses SQLite; API mode swaps the backend via config — no code changes required.
+| Feature             | CLI (SQLite)                | Production (Firestore + Cloud Run) |
+|---------------------|-----------------------------|------------------------------------|
+| Theme cache         | SQLite                      | Firestore `themes` collection      |
+| Similarity search   | numpy cosine in-process     | Firestore `FindNearest` (cosine)   |
+| Rate limiting       | In-proc token bucket        | Firestore counter doc per IP       |
+| Embeddings          | JSON array in SQLite column | Firestore vector field             |
+| Spend tracking      | SQLite `cost_log`           | Firestore `cost_log` collection    |
+| Community themes    | N/A                         | Firestore `community_themes`       |
+| Likes               | N/A                         | Firestore `likes` sub-collection   |
 
-| Feature             | CLI (SQLite)                     | API (Postgres + Redis)              |
-|---------------------|----------------------------------|-------------------------------------|
-| Theme cache         | SQLite                           | Redis (hot) + Postgres (cold)       |
-| Similarity search   | numpy cosine in-process          | pgvector ANN index                  |
-| Rate limiting       | In-proc token bucket             | Redis token bucket (distributed)    |
-| Embeddings          | JSON array in SQLite BLOB column | pgvector column                     |
-| Spend tracking      | SQLite `cost_log`                | Postgres + Redis real-time counter  |
+### 8.4 Estimated Monthly Cost (1k req/day)
+
+| Service | Cost |
+|---------|------|
+| Cloud Run (1k req/day × 0.5s × 256MB) | ~$0.50 |
+| Firestore (reads/writes at scale) | ~$1–3 |
+| Vertex AI Gemini Flash (10% cache miss × 1k) | ~$1–3 |
+| Secret Manager (5 secrets) | ~$0.30 |
+| Firebase Hosting + CDN | Free tier |
+| Firebase Auth | Free tier |
+| Cloud Build (CI/CD) | Free tier (120 min/day) |
+| **Total** | **~$3–7/month** |
 
 ---
 
