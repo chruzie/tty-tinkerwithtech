@@ -95,7 +95,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "SEC-H3 and PERF-M7 from audit. api/middleware.py lines 34-35."
     },
     {

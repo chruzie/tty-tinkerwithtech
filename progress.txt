@@ -57,3 +57,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `patch.object(module, attr, value)` is the clean way to redirect module-level Path constants in tests
   - Ruff I001 fires if stdlib imports and third-party imports are not separated by a blank line — `ruff check --fix` corrects automatically
 ---
+
+## 2026-03-15 - US-006
+- Implemented: Replaced `_minute_buckets`/`_hour_buckets` defaultdicts with `cachetools.TTLCache(maxsize=10000, ttl=3600)`; added `_get_minute_bucket`/`_get_hour_bucket` helpers for lazy bucket creation; added `cachetools>=5.3` to pyproject.toml
+- Files changed: api/middleware.py, pyproject.toml, tests/test_ttl_rate_limit.py (new)
+- **Learnings for future iterations:**
+  - `TTLCache` does not support defaultdict-style auto-creation — wrap access in a helper that does `if key not in cache: cache[key] = ...`
+  - Use `patch("api.middleware._minute_buckets", TTLCache(...))` (patch the module attribute) to isolate TTLCache state per test
+  - `uv add cachetools` updates pyproject.toml and uv.lock; uv.lock is gitignored in this project so only pyproject.toml needs committing
+---
