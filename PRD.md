@@ -1,7 +1,7 @@
 # Product Requirements Document
-## ghostty-theme: AI-Powered Ghostty Terminal Theme Generator
+## tty-theme: AI-Powered Terminal Theme Generator
 
-**Version:** 0.3
+**Version:** 0.4
 **Status:** Draft
 **Author:** chruzcruz
 **Date:** 2026-03-14
@@ -10,7 +10,7 @@
 
 ## 1. Overview
 
-`ghostty-theme` is an open source CLI tool (and optional web API) that generates valid [Ghostty](https://ghostty.org) terminal themes via two distinct input modes:
+`tty-theme` is an open source CLI tool (and optional web API) that generates terminal themes for multiple emulators from two distinct input modes:
 
 1. **Prompt mode** — Generate a theme from a natural-language inspiration query.
 2. **Image mode** — Extract a harmonious theme from any image (photo, screenshot, artwork).
@@ -18,9 +18,15 @@
 Users can run the tool **entirely locally** using a model via Ollama, LM Studio, or llamafile — or configure an API key from any supported cloud provider. No cloud dependency is required.
 
 ```bash
-ghostty-theme generate --prompt "cyberpunk neon rain"
-ghostty-theme generate --image ./wallpaper.jpg
-ghostty-theme generate --image https://example.com/photo.jpg
+# Ghostty output (default)
+tty-theme generate --prompt "cyberpunk neon rain" --target ghostty
+
+# iTerm2 output
+tty-theme generate --prompt "cyberpunk neon rain" --target iterm2
+
+# Image mode
+tty-theme generate --image ./wallpaper.jpg
+tty-theme generate --image https://example.com/photo.jpg
 ```
 
 ---
@@ -35,6 +41,7 @@ ghostty-theme generate --image https://example.com/photo.jpg
 - **G6:** Minimize API/LLM costs through caching, similarity search, and local processing.
 - **G7:** Be fully open source, self-hostable, and auditable.
 - **G8:** Be resilient to abuse, cost attacks, and misuse from day one.
+- **G9:** Output themes for multiple terminal emulators — Ghostty and iTerm2 in v1, with a clean extension path for Alacritty, WezTerm, Kitty, and others.
 
 ---
 
@@ -42,7 +49,7 @@ ghostty-theme generate --image https://example.com/photo.jpg
 
 - Not a GUI theme editor.
 - Not a theme marketplace (phase 2 if community grows).
-- Not supporting other terminal emulators in v1 (tmux, Alacritty, etc.).
+- Not supporting tmux, Alacritty, WezTerm, or Kitty in v1 (planned via extension in v2).
 - Not storing user images on any server — images are processed ephemerally.
 
 ---
@@ -52,7 +59,7 @@ ghostty-theme generate --image https://example.com/photo.jpg
 ### 4.1 Functionality A: Prompt-Based Theme Generation
 
 **Input:** UTF-8 string, 1–200 characters
-**Output:** Valid Ghostty theme key=value block
+**Output:** Theme file in the requested target format (Ghostty or iTerm2)
 
 **Pipeline:**
 ```
@@ -85,7 +92,7 @@ User Prompt
 ### 4.2 Functionality B: Image-Based Theme Extraction
 
 **Input:** Image file (local path) or HTTPS URL
-**Output:** Valid Ghostty theme key=value block
+**Output:** Theme file in the requested target format (Ghostty or iTerm2)
 
 **Pipeline:**
 ```
@@ -142,7 +149,11 @@ ghostty-theme/
 ├── generator/
 │   ├── prompt.py            # LLM prompt templates
 │   ├── llm.py               # Provider-agnostic LLM client
-│   └── validator.py         # Schema + contrast validation
+│   ├── validator.py         # Schema + contrast validation
+│   └── serializers/
+│       ├── base.py              # Abstract ThemeSerializer interface
+│       ├── ghostty.py           # Ghostty key=value serializer
+│       └── iterm2.py            # iTerm2 .itermcolors XML plist serializer
 ├── image/
 │   ├── loader.py            # Safe image loading (local + remote)
 │   ├── extractor.py         # k-means color extraction
@@ -425,25 +436,31 @@ Optional context: {optional_user_description}
 
 ---
 
-## 10. Ghostty Theme Format
+## 10. Output Formats
+
+The theme generation pipeline produces a normalized internal palette (16 ANSI colors + 5 semantic keys). A **serializer** then converts this into the target terminal's format. Adding support for a new terminal requires only a new serializer — the generation pipeline is unchanged.
+
+### 10.1 Ghostty
+
+Plain key=value text file, placed in `~/.config/ghostty/themes/<name>`.
 
 ```ini
-palette = 0=#1a1a2e   # black
-palette = 1=#e63946   # red
-palette = 2=#57cc99   # green
-palette = 3=#f4a261   # yellow
-palette = 4=#4895ef   # blue
-palette = 5=#b5179e   # magenta
-palette = 6=#4cc9f0   # cyan
-palette = 7=#ced4da   # white
-palette = 8=#6c757d   # bright black
-palette = 9=#ff6b6b   # bright red
-palette = 10=#80ffdb  # bright green
-palette = 11=#ffd166  # bright yellow
-palette = 12=#74b9ff  # bright blue
-palette = 13=#d63af9  # bright magenta
-palette = 14=#00f5d4  # bright cyan
-palette = 15=#ffffff  # bright white
+palette = 0=#1a1a2e
+palette = 1=#e63946
+palette = 2=#57cc99
+palette = 3=#f4a261
+palette = 4=#4895ef
+palette = 5=#b5179e
+palette = 6=#4cc9f0
+palette = 7=#ced4da
+palette = 8=#6c757d
+palette = 9=#ff6b6b
+palette = 10=#80ffdb
+palette = 11=#ffd166
+palette = 12=#74b9ff
+palette = 13=#d63af9
+palette = 14=#00f5d4
+palette = 15=#ffffff
 background = #1a1a2e
 foreground = #ced4da
 cursor-color = #f4a261
@@ -451,48 +468,96 @@ selection-background = #4895ef
 selection-foreground = #1a1a2e
 ```
 
-All 21 keys are required. The validator rejects any theme missing a key or containing an invalid hex value.
+All 21 keys required. Validator rejects missing keys or invalid hex values.
+
+**Install path:** `~/.config/ghostty/themes/<name>`
+
+---
+
+### 10.2 iTerm2
+
+XML property list (`.itermcolors`) imported via iTerm2 → Preferences → Profiles → Colors → Import. RGB components are expressed as floats in the sRGB color space (0.0–1.0).
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Ansi 0 Color</key>
+  <dict>
+    <key>Alpha Component</key><real>1</real>
+    <key>Blue Component</key><real>0.180</real>
+    <key>Color Space</key><string>sRGB</string>
+    <key>Green Component</key><real>0.102</real>
+    <key>Red Component</key><real>0.102</real>
+  </dict>
+  <!-- Ansi 1–15, Background Color, Foreground Color,
+       Bold Color, Cursor Color, Cursor Text Color,
+       Selection Color, Selected Text Color, Link Color -->
+</dict>
+</plist>
+```
+
+**Required keys:** Ansi 0–15 Color, Background Color, Foreground Color, Bold Color, Cursor Color, Cursor Text Color, Selection Color, Selected Text Color, Link Color.
+
+**Install path:** `~/Library/Application Support/iTerm2/DynamicProfiles/` (dynamic) or import manually.
+
+**Serializer notes:**
+- Hex `#RRGGBB` → divide each channel by 255.0 → float, rounded to 6 decimal places.
+- Color Space is always `sRGB`.
+- Alpha Component is always `1` (fully opaque).
+
+---
+
+### 10.3 Extension Path (v2+)
+
+| Terminal    | Format                   | Status   |
+|-------------|--------------------------|----------|
+| Ghostty     | `key=value` text         | v1 ✓     |
+| iTerm2      | XML plist `.itermcolors` | v1 ✓     |
+| Alacritty   | TOML                     | v2       |
+| WezTerm     | Lua                      | v2       |
+| Kitty       | `.conf` key=value        | v2       |
+| Windows Terminal | JSON                | v2       |
+
+Adding a new target = implement `ThemeSerializer` base class → one new file in `serializers/`.
 
 ---
 
 ## 11. CLI Interface
 
 ```bash
-# Setup wizard (run once)
-ghostty-theme config setup
+# Generate for Ghostty (default)
+tty-theme generate --prompt "cyberpunk neon rain"
 
-# Generate from text prompt
-ghostty-theme generate --prompt "cyberpunk neon rain"
+# Generate for iTerm2
+tty-theme generate --prompt "cyberpunk neon rain" --target iterm2
 
-# Generate from local image
-ghostty-theme generate --image ./wallpaper.jpg
+# Generate for both at once
+tty-theme generate --prompt "cyberpunk neon rain" --target ghostty --target iterm2
 
-# Generate from remote image (HTTPS only)
-ghostty-theme generate --image https://example.com/photo.jpg
+# Image mode, iTerm2 output
+tty-theme generate --image ./wallpaper.jpg --target iterm2
 
-# Override provider for one command
-ghostty-theme generate --prompt "ocean" --provider groq
+# Generate + install (auto-detects install path per target)
+tty-theme generate --prompt "tokyo midnight" --target ghostty --install --name "tokyo-midnight"
+tty-theme generate --prompt "tokyo midnight" --target iterm2 --install --name "tokyo-midnight"
 
-# Generate + install into Ghostty themes directory
-ghostty-theme generate --prompt "tokyo midnight" --install --name "tokyo-midnight"
-
-# Optional LLM refinement for image mode
-ghostty-theme generate --image ./photo.jpg --refine
-
-# Search cached/indexed themes
-ghostty-theme search "ocean"
+# Search existing cached/indexed themes
+tty-theme search "ocean"
 
 # List all cached themes
-ghostty-theme list
+tty-theme list
 
-# Export a theme to stdout
-ghostty-theme export "tokyo-midnight"
+# Export a specific format to stdout
+tty-theme export "tokyo-midnight" --target iterm2
 
 # Seed DB with bundled community themes
-ghostty-theme seed
+tty-theme seed
 
 # Show config + spend to date (API keys masked)
-ghostty-theme config status
+tty-theme config status
 ```
 
 ---
@@ -600,20 +665,176 @@ Each entry records `source`, `license` (MIT/CC0 only), and `author`. No propriet
 
 ---
 
+## 14. Community Theme Gallery
+
+### 14.1 Overview
+
+Users can publish generated or locally crafted themes to a public gallery hosted at the tty-theme website. Others can browse, search, download, like, and install themes directly from the gallery — without generating anything themselves.
+
+**CLI integration:**
+```bash
+# Publish a theme to the gallery (requires free account or GitHub OAuth)
+tty-theme publish "cyberpunk-neon-rain" --target ghostty --target iterm2
+
+# Browse gallery in the terminal
+tty-theme browse --sort downloads
+tty-theme browse --sort likes --target iterm2
+
+# Install from gallery by slug
+tty-theme install cyberpunk-neon-rain --target ghostty
+
+# Share a link to your theme
+tty-theme share "cyberpunk-neon-rain"
+# → https://tty-theme.dev/t/cyberpunk-neon-rain
+```
+
+---
+
+### 14.2 Gallery Features
+
+| Feature              | Description                                                             |
+|----------------------|-------------------------------------------------------------------------|
+| Browse & search      | Full-text search by name, tags, and author. Filter by terminal target.  |
+| Sort by downloads    | Total number of times a theme file was downloaded/installed.            |
+| Sort by likes        | Heart reactions — one per user per theme, anonymous via fingerprint.    |
+| Sort by newest       | Chronological, newest first.                                            |
+| Theme detail page    | Color strip preview, full 16-swatch palette, live terminal mockup, raw config display, copy/download/install buttons. |
+| Shareable URL        | Every published theme gets a stable slug URL: `tty-theme.dev/t/<slug>` |
+| CLI install link     | Each theme page shows the one-liner install command.                    |
+| Multi-target download | Download Ghostty and/or iTerm2 format from the same theme page.        |
+| Attribution          | Author username, source (ai/image/manual), provider used (optional).   |
+
+---
+
+### 14.3 Data Model Additions
+
+#### `community_themes` table (server-side Postgres)
+```sql
+CREATE TABLE community_themes (
+    id              SERIAL PRIMARY KEY,
+    slug            TEXT NOT NULL UNIQUE,          -- URL-safe name, e.g. "cyberpunk-neon-rain"
+    display_name    TEXT NOT NULL,
+    author_id       INTEGER REFERENCES users(id),
+    ghostty_data    TEXT,                          -- Ghostty key=value output (NULL if not published)
+    iterm2_data     TEXT,                          -- iTerm2 XML plist output (NULL if not published)
+    palette_json    TEXT NOT NULL,                 -- JSON array of 16 hex colors for preview strip
+    source          TEXT DEFAULT 'ai',             -- 'ai' | 'image' | 'manual'
+    provider        TEXT,                          -- LLM used (NULL if local/manual)
+    tags            TEXT[],                        -- searchable tags
+    download_count  INTEGER DEFAULT 0,
+    like_count      INTEGER DEFAULT 0,
+    is_public       BOOLEAN DEFAULT true,
+    is_flagged      BOOLEAN DEFAULT false,         -- moderation flag
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    updated_at      TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_community_slug        ON community_themes(slug);
+CREATE INDEX idx_community_downloads   ON community_themes(download_count DESC);
+CREATE INDEX idx_community_likes       ON community_themes(like_count DESC);
+CREATE INDEX idx_community_created     ON community_themes(created_at DESC);
+CREATE INDEX idx_community_tags        ON community_themes USING GIN(tags);
+```
+
+#### `theme_likes` table
+```sql
+CREATE TABLE theme_likes (
+    id          SERIAL PRIMARY KEY,
+    theme_id    INTEGER NOT NULL REFERENCES community_themes(id) ON DELETE CASCADE,
+    user_id     INTEGER REFERENCES users(id),      -- NULL for anonymous
+    fingerprint TEXT,                              -- SHA256(IP+UA) for anonymous rate-limit
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (theme_id, user_id),
+    UNIQUE (theme_id, fingerprint)                 -- one like per fingerprint per theme
+);
+```
+
+#### `users` table (minimal — GitHub OAuth only in v1)
+```sql
+CREATE TABLE users (
+    id           SERIAL PRIMARY KEY,
+    github_id    TEXT NOT NULL UNIQUE,
+    username     TEXT NOT NULL,
+    avatar_url   TEXT,
+    created_at   TIMESTAMPTZ DEFAULT now()
+);
+```
+
+---
+
+### 14.4 API Endpoints (Gallery)
+
+| Method | Path                              | Description                              | Auth       |
+|--------|-----------------------------------|------------------------------------------|------------|
+| GET    | `/v1/themes`                      | List themes (sort, filter, paginate)     | Public     |
+| GET    | `/v1/themes/:slug`                | Get theme detail + download URLs         | Public     |
+| GET    | `/v1/themes/:slug/download/:fmt`  | Download theme file (`ghostty`/`iterm2`) | Public     |
+| POST   | `/v1/themes`                      | Publish a theme                          | Auth       |
+| DELETE | `/v1/themes/:slug`                | Delete own theme                         | Auth       |
+| POST   | `/v1/themes/:slug/like`           | Like a theme                             | Public (fingerprint) |
+| DELETE | `/v1/themes/:slug/like`           | Unlike a theme                           | Public     |
+| POST   | `/v1/themes/:slug/flag`           | Report a theme                           | Public     |
+
+Download increments `download_count` atomically via `UPDATE ... SET download_count = download_count + 1`.
+
+---
+
+### 14.5 Sharing & Distribution
+
+**Shareable URL:** `https://tty-theme.dev/t/<slug>`
+
+Each theme page includes:
+- One-click copy of the install command: `tty-theme install <slug>`
+- Direct download buttons for each available format (`.ghostty`, `.itermcolors`)
+- Social preview meta tags (og:image generated server-side from palette strip)
+- A "clone and remix" button that pre-fills the generator with the theme's inspiration prompt
+
+**CLI share command:**
+```bash
+tty-theme share "cyberpunk-neon-rain"
+# Outputs: https://tty-theme.dev/t/cyberpunk-neon-rain (copied to clipboard)
+```
+
+---
+
+### 14.6 Community Safety & Abuse Prevention
+
+| Risk                         | Mitigation                                                                 |
+|------------------------------|----------------------------------------------------------------------------|
+| Spam theme publishing        | Rate limit: max 10 publishes/day per account, 3/hour for anonymous.        |
+| Offensive theme names/slugs  | Slug allowlist regex (`[a-z0-9-]+`, 3–60 chars). Server-side blocklist of slurs/reserved words. |
+| Inappropriate content        | Themes contain only hex color data — no user-generated text stored except the slug and display name (both sanitized). |
+| Like farming / bot likes     | Anonymous likes rate-limited by SHA256(IP+UA) fingerprint. One like per fingerprint per theme. Account-based likes deduplicated by user_id. |
+| Download count manipulation  | Download counter incremented server-side only, not client-controllable. Not used for any financial purpose. |
+| Account abuse                | GitHub OAuth only — no email/password auth, no throwaway accounts. Abuse reports routed to maintainer. |
+| Scrapers hammering API       | Public API rate-limited: 60 req/min per IP. `Cache-Control` headers on list/detail endpoints (CDN-cacheable). |
+| Data integrity               | `palette_json` validated server-side (must be 16 valid hex colors) before insert. `ghostty_data` and `iterm2_data` validated against their respective schemas. |
+
+---
+
+### 14.7 Moderation
+
+- Flagged themes (`is_flagged = true`) are hidden from public listings but remain accessible by direct URL to the author.
+- Maintainer reviews flags manually. Automated: themes with ≥3 flags are auto-hidden pending review.
+- No user-generated freeform text is stored (only slug + display name), minimising moderation surface.
+
+---
+
 ## 16. Milestones
 
 | Phase | Deliverable                                                               |
 |-------|---------------------------------------------------------------------------|
 | 1     | Project scaffold, SQLite schema, CLI skeleton, security module stubs      |
 | 2     | Provider system (Ollama, LM Studio, llamafile, cloud adapters), config wizard |
-| 3     | Prompt mode: LLM generator, schema validator, cache                       |
-| 4     | Image mode: safe loader + SSRF guard + k-means + pHash cache              |
-| 5     | Embedding similarity search (MiniLM, cosine, JSON-stored vectors)         |
-| 6     | Pre-seeded theme index (50 themes, licensed)                              |
-| 7     | Rate limiting, spend circuit breaker, audit log                           |
-| 8     | `--install` flag, Ghostty config integration                              |
-| 9     | README, docs, PyPI publish, SBOM, sigstore signing                        |
-| 10    | (Optional) FastAPI web layer + Redis + pgvector for hosted deployment     |
+| 2b    | Prompt mode: LLM generator (Ollama + Claude Haiku), validator, caching    |
+| 2c    | Output serializers: Ghostty + iTerm2, ThemeSerializer base class          |
+| 3     | Image mode: safe loader + SSRF guard + k-means + pHash cache              |
+| 4     | Embedding similarity search (MiniLM, cosine, JSON-stored vectors)         |
+| 5     | Pre-seeded theme index (50 themes, licensed)                              |
+| 6     | Rate limiting, spend circuit breaker, audit log                           |
+| 7     | `--install` flag, Ghostty + iTerm2 install path integration               |
+| 8     | README, docs, PyPI publish, SBOM, sigstore signing                        |
+| 9     | (Optional) FastAPI web layer + Redis + pgvector for hosted deployment     |
 
 ---
 
@@ -663,7 +884,7 @@ Accessibility: all interactive elements have focus rings, ARIA roles, labels, an
 - [ ] License: MIT (recommended for max community adoption)?
 - [ ] Should we support light themes via a `--light` flag or auto-detect from query?
 - [ ] Should the web UI (phase 2) be static + public API, or client-side WASM for full privacy?
-- [ ] Do we want a `ghostty-theme contribute` command to submit themes back to the index?
+- [ ] Do we want a `tty-theme contribute` command to submit themes back to the index?
 - [ ] Should image mode support clipboard paste as input?
 - [ ] For hosted API: anonymous free tier (N req/day) vs. API key required from day one?
 - [ ] Which local model should be recommended in docs for best theme quality at minimal size? (candidate: `llama3:8b`, `mistral:7b`, `phi3:mini`)

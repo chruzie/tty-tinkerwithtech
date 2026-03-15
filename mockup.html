@@ -84,12 +84,12 @@
             <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
           </svg>
         </div>
-        <span class="text-text font-bold text-sm tracking-tight">ghostty-theme</span>
+        <span class="text-text font-bold text-sm tracking-tight">tty-theme</span>
         <span class="text-muted text-xs">v0.1.0</span>
       </div>
       <nav class="flex items-center gap-4" aria-label="Site navigation">
         <a href="#" class="text-muted hover:text-text text-xs transition-colors duration-200 cursor-pointer">docs</a>
-        <a href="#" class="text-muted hover:text-text text-xs transition-colors duration-200 cursor-pointer">browse themes</a>
+        <button onclick="showGallery()" class="text-muted hover:text-text text-xs transition-colors duration-200 cursor-pointer">browse themes</button>
         <a href="https://github.com/tty-tinkerwithtech/ghostty-theme" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-muted hover:text-text text-xs transition-colors duration-200 cursor-pointer" aria-label="View on GitHub">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
@@ -113,10 +113,10 @@
           open source · local-first · no account required
         </div>
         <h1 class="text-3xl font-bold text-text mb-3 leading-tight">
-          Generate <span class="text-green">Ghostty</span> themes<br/>from a prompt or image
+          Generate terminal themes<br/>from a <span class="text-green">prompt</span> or <span class="text-cyan">image</span>
         </h1>
         <p class="text-muted text-sm max-w-md mx-auto leading-relaxed">
-          Describe a vibe or drop an image. Get a valid Ghostty theme in seconds.
+          Describe a vibe or drop an image. Get a valid theme for Ghostty or iTerm2.
           Runs locally with Ollama — or uses a cloud API of your choice.
         </p>
       </div>
@@ -163,6 +163,30 @@
             class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
             role="radio" aria-checked="false">
             GPT-4o-mini
+          </button>
+        </div>
+      </div>
+
+      <!-- Terminal Target Selector -->
+      <div class="mb-6">
+        <div class="flex items-center gap-2 mb-2">
+          <svg class="w-3.5 h-3.5 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+          <label class="text-muted text-xs">target terminal</label>
+        </div>
+        <div class="flex gap-2" role="radiogroup" aria-label="Select target terminal">
+          <button onclick="selectTarget(this)" data-target="ghostty"
+            class="target-btn px-3 py-1.5 text-xs border border-green/40 bg-green/10 text-green rounded cursor-pointer transition-all duration-200 hover:border-green flex items-center gap-1.5"
+            role="radio" aria-checked="true">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            Ghostty
+          </button>
+          <button onclick="selectTarget(this)" data-target="iterm2"
+            class="target-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-cyan hover:text-cyan flex items-center gap-1.5"
+            role="radio" aria-checked="false">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            iTerm2
           </button>
         </div>
       </div>
@@ -416,15 +440,31 @@
         <!-- Right: Theme data + actions -->
         <div>
           <div class="flex items-center justify-between mb-3">
-            <h2 class="text-muted text-xs uppercase tracking-widest font-bold">theme</h2>
+            <div class="flex items-center gap-3">
+              <h2 class="text-muted text-xs uppercase tracking-widest font-bold">theme</h2>
+              <!-- Format toggle -->
+              <div class="flex rounded overflow-hidden border border-border text-xs" role="group" aria-label="Output format">
+                <button onclick="switchFormat('ghostty')" id="fmt-ghostty"
+                  class="fmt-btn px-2.5 py-1 bg-green/10 text-green cursor-pointer transition-all duration-150">ghostty</button>
+                <button onclick="switchFormat('iterm2')" id="fmt-iterm2"
+                  class="fmt-btn px-2.5 py-1 text-muted cursor-pointer transition-all duration-150 hover:text-text">iterm2</button>
+              </div>
+            </div>
             <div class="flex gap-2">
+              <button onclick="shareTheme()" class="flex items-center gap-1.5 px-3 py-1.5 border border-border text-muted text-xs rounded hover:border-amber hover:text-amber transition-all duration-200 cursor-pointer" aria-label="Share theme">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
+                share
+              </button>
               <button onclick="copyTheme()" class="flex items-center gap-1.5 px-3 py-1.5 border border-border text-muted text-xs rounded hover:border-green hover:text-green transition-all duration-200 cursor-pointer" aria-label="Copy theme to clipboard">
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
                 </svg>
                 copy
               </button>
-              <button onclick="installTheme()" class="flex items-center gap-1.5 px-3 py-1.5 bg-green/10 border border-green/40 text-green text-xs rounded hover:bg-green/20 transition-all duration-200 cursor-pointer" aria-label="Install theme to Ghostty">
+              <button onclick="installTheme()" class="flex items-center gap-1.5 px-3 py-1.5 bg-green/10 border border-green/40 text-green text-xs rounded hover:bg-green/20 transition-all duration-200 cursor-pointer" aria-label="Install theme">
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                 </svg>
@@ -656,6 +696,224 @@ palette = 15=#ffffff</code></pre>
       </div>
     </div>
 
+    <!-- ════ GALLERY VIEW ════ -->
+    <div id="gallery-view" class="hidden animate-fade-in">
+
+      <!-- Back bar -->
+      <div class="flex items-center gap-3 mb-8">
+        <button onclick="showHome()" class="flex items-center gap-1.5 text-muted hover:text-text text-xs transition-colors duration-200 cursor-pointer" aria-label="Go back">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+          back
+        </button>
+        <span class="text-border" aria-hidden="true">/</span>
+        <span class="text-text text-xs font-bold">community themes</span>
+        <span class="text-muted text-xs ml-2">247 themes</span>
+      </div>
+
+      <!-- Sort + Filter bar -->
+      <div class="flex items-center gap-3 mb-6 flex-wrap">
+        <div class="flex rounded overflow-hidden border border-border text-xs" role="group" aria-label="Sort by">
+          <button onclick="setSort(this,'downloads')" class="sort-btn px-3 py-1.5 bg-green/10 text-green cursor-pointer transition-all duration-150 flex items-center gap-1.5">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            downloads
+          </button>
+          <button onclick="setSort(this,'likes')" class="sort-btn px-3 py-1.5 text-muted cursor-pointer transition-all duration-150 hover:text-text flex items-center gap-1.5">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+            likes
+          </button>
+          <button onclick="setSort(this,'newest')" class="sort-btn px-3 py-1.5 text-muted cursor-pointer transition-all duration-150 hover:text-text">
+            newest
+          </button>
+        </div>
+        <!-- Target filter -->
+        <div class="flex rounded overflow-hidden border border-border text-xs ml-auto" role="group" aria-label="Filter by terminal">
+          <button class="px-3 py-1.5 bg-surface text-text cursor-pointer">all</button>
+          <button class="px-3 py-1.5 text-muted cursor-pointer hover:text-text">ghostty</button>
+          <button class="px-3 py-1.5 text-muted cursor-pointer hover:text-text">iterm2</button>
+        </div>
+        <!-- Search -->
+        <div class="relative">
+          <svg class="w-3 h-3 text-muted absolute left-2.5 top-1/2 -translate-y-1/2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="search" placeholder="search themes..." class="pl-7 pr-3 py-1.5 bg-bg border border-border rounded text-xs text-text placeholder-muted focus:border-green focus:outline-none w-40 transition-colors duration-200" aria-label="Search themes" />
+        </div>
+      </div>
+
+      <!-- Theme grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" role="list" aria-label="Community themes">
+
+        <!-- Card 1 -->
+        <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-green/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0">
+          <div class="h-3 flex" aria-hidden="true">
+            <div class="flex-1" style="background:#0d0d1a"></div><div class="flex-1" style="background:#ff2d78"></div>
+            <div class="flex-1" style="background:#00e5a0"></div><div class="flex-1" style="background:#ffcc00"></div>
+            <div class="flex-1" style="background:#3d8bff"></div><div class="flex-1" style="background:#cc44ff"></div>
+            <div class="flex-1" style="background:#00d4ff"></div><div class="flex-1" style="background:#c0c0d0"></div>
+          </div>
+          <div class="p-4">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <h3 class="text-text text-sm font-bold">cyberpunk-neon-rain</h3>
+                <p class="text-muted text-xs mt-0.5">by chruzcruz · AI generated</p>
+              </div>
+              <div class="flex gap-1">
+                <span class="text-xs px-1.5 py-0.5 bg-green/10 text-green rounded">ghostty</span>
+                <span class="text-xs px-1.5 py-0.5 bg-cyan/10 text-cyan rounded">iterm2</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-muted">
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                1.2k
+              </span>
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" fill="#EF4444"/></svg>
+                <span class="text-red">342</span>
+              </span>
+              <span class="ml-auto text-green group-hover:underline">use →</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 2 -->
+        <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-green/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0">
+          <div class="h-3 flex" aria-hidden="true">
+            <div class="flex-1" style="background:#1c1009"></div><div class="flex-1" style="background:#c0392b"></div>
+            <div class="flex-1" style="background:#a8c23a"></div><div class="flex-1" style="background:#e67e22"></div>
+            <div class="flex-1" style="background:#5d6a7e"></div><div class="flex-1" style="background:#9b59b6"></div>
+            <div class="flex-1" style="background:#3dc9b0"></div><div class="flex-1" style="background:#ecf0f1"></div>
+          </div>
+          <div class="p-4">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <h3 class="text-text text-sm font-bold">autumn-forest</h3>
+                <p class="text-muted text-xs mt-0.5">by devmike · AI generated</p>
+              </div>
+              <span class="text-xs px-1.5 py-0.5 bg-green/10 text-green rounded">ghostty</span>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-muted">
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                894
+              </span>
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" fill="#EF4444"/></svg>
+                <span class="text-red">201</span>
+              </span>
+              <span class="ml-auto text-green group-hover:underline">use →</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 3 -->
+        <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-green/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0">
+          <div class="h-3 flex" aria-hidden="true">
+            <div class="flex-1" style="background:#0a0e1a"></div><div class="flex-1" style="background:#ff5370"></div>
+            <div class="flex-1" style="background:#c3e88d"></div><div class="flex-1" style="background:#ffcb6b"></div>
+            <div class="flex-1" style="background:#82aaff"></div><div class="flex-1" style="background:#c792ea"></div>
+            <div class="flex-1" style="background:#89ddff"></div><div class="flex-1" style="background:#d0d0d0"></div>
+          </div>
+          <div class="p-4">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <h3 class="text-text text-sm font-bold">material-ocean</h3>
+                <p class="text-muted text-xs mt-0.5">by sz0u · community</p>
+              </div>
+              <div class="flex gap-1">
+                <span class="text-xs px-1.5 py-0.5 bg-green/10 text-green rounded">ghostty</span>
+                <span class="text-xs px-1.5 py-0.5 bg-cyan/10 text-cyan rounded">iterm2</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-muted">
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                3.4k
+              </span>
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" fill="#EF4444"/></svg>
+                <span class="text-red">892</span>
+              </span>
+              <span class="ml-auto text-green group-hover:underline">use →</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 4 -->
+        <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-green/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0">
+          <div class="h-3 flex" aria-hidden="true">
+            <div class="flex-1" style="background:#0d1117"></div><div class="flex-1" style="background:#ff79c6"></div>
+            <div class="flex-1" style="background:#50fa7b"></div><div class="flex-1" style="background:#f1fa8c"></div>
+            <div class="flex-1" style="background:#6272a4"></div><div class="flex-1" style="background:#bd93f9"></div>
+            <div class="flex-1" style="background:#8be9fd"></div><div class="flex-1" style="background:#f8f8f2"></div>
+          </div>
+          <div class="p-4">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <h3 class="text-text text-sm font-bold">dracula-pro</h3>
+                <p class="text-muted text-xs mt-0.5">by dracula_org · community</p>
+              </div>
+              <div class="flex gap-1">
+                <span class="text-xs px-1.5 py-0.5 bg-green/10 text-green rounded">ghostty</span>
+                <span class="text-xs px-1.5 py-0.5 bg-cyan/10 text-cyan rounded">iterm2</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-muted">
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                8.1k
+              </span>
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" fill="#EF4444"/></svg>
+                <span class="text-red">2.1k</span>
+              </span>
+              <span class="ml-auto text-green group-hover:underline">use →</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 5 -->
+        <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-green/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0">
+          <div class="h-3 flex" aria-hidden="true">
+            <div class="flex-1" style="background:#2e3440"></div><div class="flex-1" style="background:#bf616a"></div>
+            <div class="flex-1" style="background:#a3be8c"></div><div class="flex-1" style="background:#ebcb8b"></div>
+            <div class="flex-1" style="background:#81a1c1"></div><div class="flex-1" style="background:#b48ead"></div>
+            <div class="flex-1" style="background:#88c0d0"></div><div class="flex-1" style="background:#d8dee9"></div>
+          </div>
+          <div class="p-4">
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <h3 class="text-text text-sm font-bold">nord</h3>
+                <p class="text-muted text-xs mt-0.5">by arcticicestudio · community</p>
+              </div>
+              <div class="flex gap-1">
+                <span class="text-xs px-1.5 py-0.5 bg-green/10 text-green rounded">ghostty</span>
+                <span class="text-xs px-1.5 py-0.5 bg-cyan/10 text-cyan rounded">iterm2</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-muted">
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                6.7k
+              </span>
+              <span class="flex items-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" fill="#EF4444"/></svg>
+                <span class="text-red">1.8k</span>
+              </span>
+              <span class="ml-auto text-green group-hover:underline">use →</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 6 — Contribute CTA -->
+        <article class="bg-bg border-2 border-dashed border-border rounded-lg overflow-hidden hover:border-green/40 transition-all duration-200 cursor-pointer group flex items-center justify-center min-h-[120px]" role="listitem" tabindex="0" onclick="showHome()">
+          <div class="text-center p-4">
+            <svg class="w-6 h-6 text-muted mx-auto mb-2 group-hover:text-green transition-colors duration-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <p class="text-muted text-xs group-hover:text-green transition-colors duration-200">generate &amp; contribute a theme</p>
+          </div>
+        </article>
+
+      </div>
+    </div>
+
     <!-- ─── STATUS BAR ─── -->
     <footer class="mt-12 pt-4 border-t border-border/40 flex items-center justify-between text-xs text-muted">
       <span>ghostty-theme v0.1.0 · MIT</span>
@@ -733,6 +991,7 @@ palette = 15=#ffffff</code></pre>
 
     function showHome() {
       document.getElementById('results-view').classList.add('hidden');
+      document.getElementById('gallery-view').classList.add('hidden');
       document.getElementById('home-view').classList.remove('hidden');
       document.getElementById('home-view').classList.add('animate-fade-in');
     }
@@ -752,6 +1011,123 @@ palette = 15=#ffffff</code></pre>
       toast.textContent = msg;
       toast.classList.remove('hidden');
       setTimeout(() => toast.classList.add('hidden'), 2500);
+    }
+
+    // ── Target selection ──────────────────────────────────────
+    function selectTarget(btn) {
+      document.querySelectorAll('.target-btn').forEach(b => {
+        b.classList.remove('border-green/40','bg-green/10','text-green');
+        b.classList.add('border-border','text-muted');
+        b.setAttribute('aria-checked','false');
+      });
+      btn.classList.remove('border-border','text-muted');
+      btn.classList.add('border-green/40','bg-green/10','text-green');
+      btn.setAttribute('aria-checked','true');
+    }
+
+    // ── Format switching (results view) ───────────────────────
+    const GHOSTTY_OUTPUT = `background = #0d0d1a
+foreground = #c0c0d0
+cursor-color = #ff2d78
+selection-background = #1e1e3a
+selection-foreground = #ffffff
+palette = 0=#0d0d1a
+palette = 1=#ff2d78
+palette = 2=#00e5a0
+palette = 3=#ffcc00
+palette = 4=#3d8bff
+palette = 5=#cc44ff
+palette = 6=#00d4ff
+palette = 7=#c0c0d0
+palette = 8=#1a1a2e
+palette = 9=#ff6ba0
+palette = 10=#39ffc0
+palette = 11=#ffe066
+palette = 12=#70aaff
+palette = 13=#df88ff
+palette = 14=#66e8ff
+palette = 15=#ffffff`;
+
+    const ITERM2_OUTPUT = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Ansi 0 Color</key>
+  <dict>
+    <key>Alpha Component</key><real>1</real>
+    <key>Blue Component</key><real>0.102</real>
+    <key>Color Space</key><string>sRGB</string>
+    <key>Green Component</key><real>0.051</real>
+    <key>Red Component</key><real>0.051</real>
+  </dict>
+  <key>Ansi 1 Color</key>
+  <dict>
+    <key>Alpha Component</key><real>1</real>
+    <key>Blue Component</key><real>0.471</real>
+    <key>Color Space</key><string>sRGB</string>
+    <key>Green Component</key><real>0.176</real>
+    <key>Red Component</key><real>1.000</real>
+  </dict>
+  <key>Background Color</key>
+  <dict>
+    <key>Alpha Component</key><real>1</real>
+    <key>Blue Component</key><real>0.102</real>
+    <key>Color Space</key><string>sRGB</string>
+    <key>Green Component</key><real>0.051</real>
+    <key>Red Component</key><real>0.051</real>
+  </dict>
+  <key>Foreground Color</key>
+  <dict>
+    <key>Alpha Component</key><real>1</real>
+    <key>Blue Component</key><real>0.816</real>
+    <key>Color Space</key><string>sRGB</string>
+    <key>Green Component</key><real>0.753</real>
+    <key>Red Component</key><real>0.753</real>
+  </dict>
+  <!-- ... remaining Ansi 2–15, Cursor, Selection colors -->
+</dict>
+</plist>`;
+
+    function switchFormat(fmt) {
+      document.getElementById('theme-output').textContent =
+        fmt === 'iterm2' ? ITERM2_OUTPUT : GHOSTTY_OUTPUT;
+      ['ghostty','iterm2'].forEach(f => {
+        const btn = document.getElementById('fmt-' + f);
+        if (f === fmt) {
+          btn.classList.add('bg-green/10','text-green');
+          btn.classList.remove('text-muted');
+        } else {
+          btn.classList.remove('bg-green/10','text-green');
+          btn.classList.add('text-muted');
+        }
+      });
+    }
+
+    // ── Gallery view ──────────────────────────────────────────
+    function showGallery() {
+      document.getElementById('home-view').classList.add('hidden');
+      document.getElementById('results-view').classList.add('hidden');
+      document.getElementById('gallery-view').classList.remove('hidden');
+      document.getElementById('gallery-view').classList.add('animate-fade-in');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function setSort(btn, _key) {
+      document.querySelectorAll('.sort-btn').forEach(b => {
+        b.classList.remove('bg-green/10','text-green');
+        b.classList.add('text-muted');
+      });
+      btn.classList.add('bg-green/10','text-green');
+      btn.classList.remove('text-muted');
+    }
+
+    // ── Share ─────────────────────────────────────────────────
+    function shareTheme() {
+      const url = 'https://tty-theme.dev/t/cyberpunk-neon-rain';
+      navigator.clipboard.writeText(url).then(() =>
+        showToast('✓ share link copied → ' + url)
+      );
     }
   </script>
 </body>
