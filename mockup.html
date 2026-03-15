@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ghostty-theme — AI Terminal Theme Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { mono: ['Space Mono', 'monospace'] },
+          colors: {
+            bg:      '#0F172A',
+            surface: '#1E293B',
+            border:  '#334155',
+            muted:   '#64748B',
+            text:    '#F8FAFC',
+            green:   '#22C55E',
+            purple:  '#818CF8',
+            amber:   '#F59E0B',
+            red:     '#EF4444',
+            cyan:    '#22D3EE',
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.3s ease',
+            'slide-up': 'slideUp 0.3s ease',
+            'blink': 'blink 1s step-end infinite',
+            'pulse-green': 'pulseGreen 2s ease-in-out infinite',
+          },
+          keyframes: {
+            fadeIn:     { from: { opacity: 0 }, to: { opacity: 1 } },
+            slideUp:    { from: { opacity: 0, transform: 'translateY(12px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
+            blink:      { '0%,100%': { opacity: 1 }, '50%': { opacity: 0 } },
+            pulseGreen: { '0%,100%': { boxShadow: '0 0 0 0 rgba(34,197,94,0)' }, '50%': { boxShadow: '0 0 0 6px rgba(34,197,94,0.15)' } },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { font-family: 'Space Mono', monospace; }
+    body { background: #0F172A; color: #F8FAFC; }
+    :focus-visible { outline: 2px solid #22C55E; outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; } }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0F172A; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    /* Terminal cursor blink */
+    .cursor::after { content: '█'; animation: blink 1s step-end infinite; color: #22C55E; }
+
+    /* Drag-over state */
+    .drop-zone.dragging { border-color: #22C55E; background: rgba(34,197,94,0.05); }
+
+    /* Swatch tooltip */
+    .swatch-wrap:hover .swatch-label { opacity: 1; transform: translateY(0); }
+    .swatch-label { opacity: 0; transform: translateY(4px); transition: all 0.15s ease; pointer-events: none; }
+
+    /* Scanline effect on terminal preview */
+    .terminal-preview::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+      pointer-events: none;
+      border-radius: inherit;
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased">
+
+  <!-- ─── HEADER ─── -->
+  <header class="border-b border-border/60 px-6 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded bg-green/10 border border-green/30 flex items-center justify-center">
+          <svg class="w-4 h-4 text-green" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+        </div>
+        <span class="text-text font-bold text-sm tracking-tight">ghostty-theme</span>
+        <span class="text-muted text-xs">v0.1.0</span>
+      </div>
+      <nav class="flex items-center gap-4" aria-label="Site navigation">
+        <a href="#" class="text-muted hover:text-text text-xs transition-colors duration-200 cursor-pointer">docs</a>
+        <a href="#" class="text-muted hover:text-text text-xs transition-colors duration-200 cursor-pointer">browse themes</a>
+        <a href="https://github.com/tty-tinkerwithtech/ghostty-theme" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 text-muted hover:text-text text-xs transition-colors duration-200 cursor-pointer" aria-label="View on GitHub">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+          </svg>
+          github
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ─── PAGE WRAPPER ─── -->
+  <main class="max-w-5xl mx-auto px-6 py-12">
+
+    <!-- ════ HOME VIEW ════ -->
+    <div id="home-view" class="animate-fade-in">
+
+      <!-- Hero -->
+      <div class="text-center mb-12">
+        <div class="inline-flex items-center gap-2 bg-green/10 border border-green/20 rounded px-3 py-1 text-green text-xs mb-6">
+          <span class="w-1.5 h-1.5 rounded-full bg-green animate-pulse inline-block" aria-hidden="true"></span>
+          open source · local-first · no account required
+        </div>
+        <h1 class="text-3xl font-bold text-text mb-3 leading-tight">
+          Generate <span class="text-green">Ghostty</span> themes<br/>from a prompt or image
+        </h1>
+        <p class="text-muted text-sm max-w-md mx-auto leading-relaxed">
+          Describe a vibe or drop an image. Get a valid Ghostty theme in seconds.
+          Runs locally with Ollama — or uses a cloud API of your choice.
+        </p>
+      </div>
+
+      <!-- Provider Selector -->
+      <div class="mb-6">
+        <div class="flex items-center gap-2 mb-2">
+          <svg class="w-3.5 h-3.5 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+          </svg>
+          <label class="text-muted text-xs" for="provider-select">provider</label>
+          <span class="text-green text-xs ml-auto flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-green inline-block" aria-hidden="true"></span>
+            ollama detected
+          </span>
+        </div>
+        <div class="flex gap-2 flex-wrap" role="radiogroup" aria-label="Select AI provider">
+          <button onclick="selectProvider(this)" data-provider="ollama"
+            class="provider-btn selected px-3 py-1.5 text-xs border border-green/40 bg-green/10 text-green rounded cursor-pointer transition-all duration-200 hover:border-green"
+            role="radio" aria-checked="true">
+            Ollama (local)
+          </button>
+          <button onclick="selectProvider(this)" data-provider="lmstudio"
+            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
+            role="radio" aria-checked="false">
+            LM Studio
+          </button>
+          <button onclick="selectProvider(this)" data-provider="claude"
+            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
+            role="radio" aria-checked="false">
+            Claude Haiku
+          </button>
+          <button onclick="selectProvider(this)" data-provider="gemini"
+            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
+            role="radio" aria-checked="false">
+            Gemini Flash
+          </button>
+          <button onclick="selectProvider(this)" data-provider="groq"
+            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
+            role="radio" aria-checked="false">
+            Groq (free)
+          </button>
+          <button onclick="selectProvider(this)" data-provider="openai"
+            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
+            role="radio" aria-checked="false">
+            GPT-4o-mini
+          </button>
+        </div>
+      </div>
+
+      <!-- Input Tabs -->
+      <div class="bg-surface border border-border rounded-lg overflow-hidden mb-8">
+        <!-- Tab bar -->
+        <div class="flex border-b border-border" role="tablist" aria-label="Input mode">
+          <button id="tab-prompt" onclick="switchTab('prompt')"
+            class="tab-btn active flex-1 px-5 py-3 text-xs font-bold text-green border-b-2 border-green bg-green/5 cursor-pointer transition-all duration-200 flex items-center justify-center gap-2"
+            role="tab" aria-selected="true" aria-controls="panel-prompt">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+            </svg>
+            prompt
+          </button>
+          <button id="tab-image" onclick="switchTab('image')"
+            class="tab-btn flex-1 px-5 py-3 text-xs font-bold text-muted border-b-2 border-transparent cursor-pointer transition-all duration-200 hover:text-text flex items-center justify-center gap-2"
+            role="tab" aria-selected="false" aria-controls="panel-image">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+            </svg>
+            image
+          </button>
+        </div>
+
+        <!-- Prompt Panel -->
+        <div id="panel-prompt" role="tabpanel" aria-labelledby="tab-prompt" class="p-5">
+          <label for="prompt-input" class="block text-muted text-xs mb-2">inspiration phrase</label>
+          <div class="relative">
+            <span class="absolute left-3 top-3.5 text-green text-sm select-none" aria-hidden="true">$</span>
+            <input id="prompt-input" type="text"
+              placeholder="cyberpunk neon rain..."
+              maxlength="200"
+              class="w-full bg-bg border border-border rounded px-8 py-3 text-sm text-text placeholder-muted focus:border-green focus:outline-none transition-colors duration-200"
+              aria-describedby="prompt-hint"
+              oninput="updateCharCount(this)"
+            />
+            <span id="char-count" class="absolute right-3 top-3.5 text-muted text-xs select-none" aria-live="polite">0/200</span>
+          </div>
+          <div class="flex justify-between items-center mt-2">
+            <p id="prompt-hint" class="text-muted text-xs">describe a color vibe, place, mood, or aesthetic</p>
+          </div>
+
+          <!-- Suggestion chips -->
+          <div class="flex flex-wrap gap-2 mt-4" aria-label="Example prompts">
+            <span class="text-muted text-xs self-center">try:</span>
+            <button onclick="setPrompt('tokyo midnight neon')" class="px-2.5 py-1 bg-bg border border-border text-muted text-xs rounded hover:border-green hover:text-green transition-all duration-200 cursor-pointer">tokyo midnight neon</button>
+            <button onclick="setPrompt('autumn forest warm')" class="px-2.5 py-1 bg-bg border border-border text-muted text-xs rounded hover:border-green hover:text-green transition-all duration-200 cursor-pointer">autumn forest warm</button>
+            <button onclick="setPrompt('deep sea bioluminescence')" class="px-2.5 py-1 bg-bg border border-border text-muted text-xs rounded hover:border-green hover:text-green transition-all duration-200 cursor-pointer">deep sea bioluminescence</button>
+            <button onclick="setPrompt('pastel cottagecore')" class="px-2.5 py-1 bg-bg border border-border text-muted text-xs rounded hover:border-green hover:text-green transition-all duration-200 cursor-pointer">pastel cottagecore</button>
+          </div>
+
+          <button onclick="showResults()" class="mt-5 w-full bg-green text-bg font-bold text-sm py-2.5 rounded hover:bg-green/90 transition-colors duration-200 cursor-pointer animate-pulse-green flex items-center justify-center gap-2" aria-label="Generate theme from prompt">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            generate theme
+          </button>
+        </div>
+
+        <!-- Image Panel -->
+        <div id="panel-image" role="tabpanel" aria-labelledby="tab-image" class="p-5 hidden">
+          <label class="block text-muted text-xs mb-2">upload image or paste URL</label>
+
+          <!-- Drop zone -->
+          <div class="drop-zone border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer transition-all duration-200 hover:border-green/50 hover:bg-green/5"
+            role="button" aria-label="Drop zone: click or drag an image here" tabindex="0"
+            ondragover="this.classList.add('dragging')" ondragleave="this.classList.remove('dragging')"
+            onclick="document.getElementById('file-input').click()">
+            <svg class="w-8 h-8 text-muted mx-auto mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <p class="text-muted text-xs mb-1">drag & drop an image here</p>
+            <p class="text-muted text-xs">PNG, JPG, WEBP, GIF · max 10MB</p>
+            <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" aria-label="Choose image file" />
+          </div>
+
+          <!-- URL input -->
+          <div class="mt-3 flex gap-2">
+            <input type="url" placeholder="https://example.com/wallpaper.jpg (HTTPS only)"
+              class="flex-1 bg-bg border border-border rounded px-3 py-2 text-xs text-text placeholder-muted focus:border-green focus:outline-none transition-colors duration-200"
+              aria-label="Image URL (HTTPS only)" />
+            <button class="px-3 py-2 border border-border text-muted text-xs rounded hover:border-green hover:text-green transition-all duration-200 cursor-pointer" aria-label="Load image from URL">load</button>
+          </div>
+
+          <!-- Optional description -->
+          <div class="mt-3">
+            <label for="image-context" class="block text-muted text-xs mb-1">optional context (used for LLM refinement)</label>
+            <input id="image-context" type="text" placeholder="e.g. make it dark and moody"
+              class="w-full bg-bg border border-border rounded px-3 py-2 text-xs text-text placeholder-muted focus:border-green focus:outline-none transition-colors duration-200" />
+          </div>
+
+          <!-- Refine toggle -->
+          <label class="flex items-center gap-2 mt-3 cursor-pointer select-none">
+            <div class="relative">
+              <input type="checkbox" class="sr-only peer" id="refine-toggle" aria-label="Enable LLM refinement" />
+              <div class="w-8 h-4 bg-border rounded-full peer-checked:bg-green transition-colors duration-200"></div>
+              <div class="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform duration-200 peer-checked:translate-x-4"></div>
+            </div>
+            <span class="text-muted text-xs">enable LLM refinement pass</span>
+            <span class="text-muted text-xs">(+~$0.002)</span>
+          </label>
+
+          <button onclick="showResults()" class="mt-5 w-full bg-green text-bg font-bold text-sm py-2.5 rounded hover:bg-green/90 transition-colors duration-200 cursor-pointer flex items-center justify-center gap-2" aria-label="Extract theme from image">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            extract theme
+          </button>
+        </div>
+      </div>
+
+      <!-- Cached / Similar Themes -->
+      <div>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xs font-bold text-muted uppercase tracking-widest">cached themes</h2>
+          <button class="text-muted text-xs hover:text-green transition-colors duration-200 cursor-pointer">browse all →</button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" role="list" aria-label="Cached themes">
+
+          <!-- Theme card: Tokyo Midnight -->
+          <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-green/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0" aria-label="Tokyo Midnight theme">
+            <!-- Color strip -->
+            <div class="h-2 flex" aria-hidden="true">
+              <div class="flex-1" style="background:#1a1a2e"></div>
+              <div class="flex-1" style="background:#e63946"></div>
+              <div class="flex-1" style="background:#57cc99"></div>
+              <div class="flex-1" style="background:#f4a261"></div>
+              <div class="flex-1" style="background:#4895ef"></div>
+              <div class="flex-1" style="background:#b5179e"></div>
+              <div class="flex-1" style="background:#4cc9f0"></div>
+              <div class="flex-1" style="background:#ced4da"></div>
+            </div>
+            <div class="p-3">
+              <div class="flex items-start justify-between">
+                <div>
+                  <h3 class="text-text text-xs font-bold">tokyo-midnight</h3>
+                  <p class="text-muted text-xs mt-0.5">community · MIT</p>
+                </div>
+                <span class="text-muted text-xs group-hover:text-green transition-colors duration-200">use →</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Theme card: Deep Sea -->
+          <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-green/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0" aria-label="Deep Sea theme">
+            <div class="h-2 flex" aria-hidden="true">
+              <div class="flex-1" style="background:#0d1117"></div>
+              <div class="flex-1" style="background:#ff79c6"></div>
+              <div class="flex-1" style="background:#50fa7b"></div>
+              <div class="flex-1" style="background:#f1fa8c"></div>
+              <div class="flex-1" style="background:#6272a4"></div>
+              <div class="flex-1" style="background:#bd93f9"></div>
+              <div class="flex-1" style="background:#8be9fd"></div>
+              <div class="flex-1" style="background:#f8f8f2"></div>
+            </div>
+            <div class="p-3">
+              <div class="flex items-start justify-between">
+                <div>
+                  <h3 class="text-text text-xs font-bold">deep-sea</h3>
+                  <p class="text-muted text-xs mt-0.5">ai · generated</p>
+                </div>
+                <span class="text-muted text-xs group-hover:text-green transition-colors duration-200">use →</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Theme card: Autumn Forest -->
+          <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-green/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0" aria-label="Autumn Forest theme">
+            <div class="h-2 flex" aria-hidden="true">
+              <div class="flex-1" style="background:#1c1009"></div>
+              <div class="flex-1" style="background:#c0392b"></div>
+              <div class="flex-1" style="background:#a8c23a"></div>
+              <div class="flex-1" style="background:#e67e22"></div>
+              <div class="flex-1" style="background:#5d6a7e"></div>
+              <div class="flex-1" style="background:#9b59b6"></div>
+              <div class="flex-1" style="background:#3dc9b0"></div>
+              <div class="flex-1" style="background:#ecf0f1"></div>
+            </div>
+            <div class="p-3">
+              <div class="flex items-start justify-between">
+                <div>
+                  <h3 class="text-text text-xs font-bold">autumn-forest</h3>
+                  <p class="text-muted text-xs mt-0.5">ai · generated</p>
+                </div>
+                <span class="text-muted text-xs group-hover:text-green transition-colors duration-200">use →</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ RESULTS VIEW ════ -->
+    <div id="results-view" class="hidden animate-slide-up">
+
+      <!-- Back + Metadata bar -->
+      <div class="flex items-center gap-3 mb-8">
+        <button onclick="showHome()" class="flex items-center gap-1.5 text-muted hover:text-text text-xs transition-colors duration-200 cursor-pointer" aria-label="Go back">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          back
+        </button>
+        <span class="text-border" aria-hidden="true">/</span>
+        <span class="text-text text-xs font-bold">cyberpunk-neon-rain</span>
+        <span class="ml-auto flex items-center gap-2">
+          <span class="text-muted text-xs">via ollama · llama3:8b</span>
+          <span class="text-border text-xs" aria-hidden="true">·</span>
+          <span class="text-green text-xs">$0.00</span>
+          <span class="text-border text-xs" aria-hidden="true">·</span>
+          <span class="text-muted text-xs">tier 3 (generated)</span>
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+
+        <!-- Left: Terminal preview -->
+        <div>
+          <h2 class="text-muted text-xs uppercase tracking-widest mb-3 font-bold">preview</h2>
+          <div class="terminal-preview relative bg-[#0d0d1a] border border-border rounded-lg overflow-hidden">
+            <!-- Terminal titlebar -->
+            <div class="flex items-center gap-1.5 px-3 py-2 border-b border-border/40 bg-[#0d0d1a]" aria-hidden="true">
+              <span class="w-2.5 h-2.5 rounded-full bg-red/70"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-amber/70"></span>
+              <span class="w-2.5 h-2.5 rounded-full bg-green/70"></span>
+              <span class="text-muted text-xs ml-2">ghostty — zsh</span>
+            </div>
+            <!-- Terminal content -->
+            <div class="p-4 text-xs leading-relaxed font-mono" aria-label="Terminal preview with generated theme">
+              <p><span style="color:#4895ef">~/projects/ghostty-theme</span> <span style="color:#57cc99">git:(</span><span style="color:#e63946">main</span><span style="color:#57cc99">)</span> <span class="cursor" style="color:#ced4da">$ ghostty-theme generate --prompt "cyberpunk neon rain"</span></p>
+              <p class="mt-2" style="color:#64748b">searching cache...</p>
+              <p style="color:#64748b">no exact match found</p>
+              <p style="color:#64748b">similarity score: 0.71 (below threshold)</p>
+              <p style="color:#64748b">generating via ollama (llama3:8b)...</p>
+              <p class="mt-2" style="color:#57cc99">✓ theme generated in 1.4s</p>
+              <p style="color:#57cc99">✓ schema valid · contrast ratio: 7.2:1</p>
+              <p style="color:#57cc99">✓ cached for future queries</p>
+              <p class="mt-3" style="color:#4cc9f0">$ ls <span style="color:#ced4da">~/.config/ghostty/themes/</span></p>
+              <p><span style="color:#f4a261">cyberpunk-neon-rain</span>  <span style="color:#ced4da">dracula</span>  <span style="color:#ced4da">nord</span></p>
+              <p class="mt-2" style="color:#b5179e">function</span> <span style="color:#4895ef">greet</span><span style="color:#ced4da">() {</span></p>
+              <p><span class="ml-4" style="color:#57cc99">echo</span> <span style="color:#f4a261">"hello, terminal"</span></p>
+              <p style="color:#ced4da">}</p>
+              <p class="mt-2"><span style="color:#e63946">error:</span> <span style="color:#ced4da">command not found: greet</span></p>
+              <p><span style="color:#4895ef">~/projects</span> <span class="cursor" style="color:#ced4da">$&nbsp;</span></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Theme data + actions -->
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-muted text-xs uppercase tracking-widest font-bold">theme</h2>
+            <div class="flex gap-2">
+              <button onclick="copyTheme()" class="flex items-center gap-1.5 px-3 py-1.5 border border-border text-muted text-xs rounded hover:border-green hover:text-green transition-all duration-200 cursor-pointer" aria-label="Copy theme to clipboard">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                </svg>
+                copy
+              </button>
+              <button onclick="installTheme()" class="flex items-center gap-1.5 px-3 py-1.5 bg-green/10 border border-green/40 text-green text-xs rounded hover:bg-green/20 transition-all duration-200 cursor-pointer" aria-label="Install theme to Ghostty">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                install
+              </button>
+            </div>
+          </div>
+
+          <!-- Raw theme output -->
+          <div class="bg-bg border border-border rounded-lg p-3 text-xs leading-relaxed text-muted overflow-auto max-h-52 mb-4" role="region" aria-label="Raw theme configuration">
+            <pre class="whitespace-pre-wrap"><code id="theme-output">background = #0d0d1a
+foreground = #c0c0d0
+cursor-color = #ff2d78
+selection-background = #1e1e3a
+selection-foreground = #ffffff
+palette = 0=#0d0d1a
+palette = 1=#ff2d78
+palette = 2=#00e5a0
+palette = 3=#ffcc00
+palette = 4=#3d8bff
+palette = 5=#cc44ff
+palette = 6=#00d4ff
+palette = 7=#c0c0d0
+palette = 8=#1a1a2e
+palette = 9=#ff6ba0
+palette = 10=#39ffc0
+palette = 11=#ffe066
+palette = 12=#70aaff
+palette = 13=#df88ff
+palette = 14=#66e8ff
+palette = 15=#ffffff</code></pre>
+          </div>
+
+          <!-- Color swatches: 16 palette -->
+          <h3 class="text-muted text-xs uppercase tracking-widest font-bold mb-2">palette</h3>
+          <div class="grid grid-cols-8 gap-1.5 mb-2" aria-label="Color palette swatches">
+            <!-- Row 1: 0-7 normal -->
+            <div class="swatch-wrap relative" title="0 black">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150 border border-white/10" style="background:#0d0d1a" role="img" aria-label="Palette 0: #0d0d1a (black)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">0</div>
+            </div>
+            <div class="swatch-wrap relative" title="1 red">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#ff2d78" role="img" aria-label="Palette 1: #ff2d78 (red)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">1</div>
+            </div>
+            <div class="swatch-wrap relative" title="2 green">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#00e5a0" role="img" aria-label="Palette 2: #00e5a0 (green)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">2</div>
+            </div>
+            <div class="swatch-wrap relative" title="3 yellow">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#ffcc00" role="img" aria-label="Palette 3: #ffcc00 (yellow)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">3</div>
+            </div>
+            <div class="swatch-wrap relative" title="4 blue">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#3d8bff" role="img" aria-label="Palette 4: #3d8bff (blue)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">4</div>
+            </div>
+            <div class="swatch-wrap relative" title="5 magenta">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#cc44ff" role="img" aria-label="Palette 5: #cc44ff (magenta)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">5</div>
+            </div>
+            <div class="swatch-wrap relative" title="6 cyan">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#00d4ff" role="img" aria-label="Palette 6: #00d4ff (cyan)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">6</div>
+            </div>
+            <div class="swatch-wrap relative" title="7 white">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150 border border-white/10" style="background:#c0c0d0" role="img" aria-label="Palette 7: #c0c0d0 (white)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">7</div>
+            </div>
+            <!-- Row 2: 8-15 bright -->
+            <div class="swatch-wrap relative mt-2" title="8 bright black">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150 border border-white/10" style="background:#1a1a2e" role="img" aria-label="Palette 8: #1a1a2e (bright black)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">8</div>
+            </div>
+            <div class="swatch-wrap relative mt-2" title="9 bright red">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#ff6ba0" role="img" aria-label="Palette 9: #ff6ba0 (bright red)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">9</div>
+            </div>
+            <div class="swatch-wrap relative mt-2" title="10 bright green">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#39ffc0" role="img" aria-label="Palette 10: #39ffc0 (bright green)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">10</div>
+            </div>
+            <div class="swatch-wrap relative mt-2" title="11 bright yellow">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#ffe066" role="img" aria-label="Palette 11: #ffe066 (bright yellow)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">11</div>
+            </div>
+            <div class="swatch-wrap relative mt-2" title="12 bright blue">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#70aaff" role="img" aria-label="Palette 12: #70aaff (bright blue)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">12</div>
+            </div>
+            <div class="swatch-wrap relative mt-2" title="13 bright magenta">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#df88ff" role="img" aria-label="Palette 13: #df88ff (bright magenta)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">13</div>
+            </div>
+            <div class="swatch-wrap relative mt-2" title="14 bright cyan">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150" style="background:#66e8ff" role="img" aria-label="Palette 14: #66e8ff (bright cyan)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">14</div>
+            </div>
+            <div class="swatch-wrap relative mt-2" title="15 bright white">
+              <div class="w-full aspect-square rounded cursor-pointer hover:scale-110 transition-transform duration-150 border border-white/10" style="background:#ffffff" role="img" aria-label="Palette 15: #ffffff (bright white)"></div>
+              <div class="swatch-label absolute -bottom-5 left-1/2 -translate-x-1/2 text-xs text-muted whitespace-nowrap">15</div>
+            </div>
+          </div>
+
+          <!-- Semantic colors -->
+          <div class="flex gap-2 mt-7 flex-wrap" aria-label="Semantic colors">
+            <div class="flex items-center gap-1.5">
+              <div class="w-3 h-3 rounded-sm border border-white/10" style="background:#0d0d1a" role="img" aria-label="Background color"></div>
+              <span class="text-muted text-xs">bg</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <div class="w-3 h-3 rounded-sm" style="background:#c0c0d0" role="img" aria-label="Foreground color"></div>
+              <span class="text-muted text-xs">fg</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <div class="w-3 h-3 rounded-sm" style="background:#ff2d78" role="img" aria-label="Cursor color"></div>
+              <span class="text-muted text-xs">cursor</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <div class="w-3 h-3 rounded-sm" style="background:#1e1e3a" role="img" aria-label="Selection background color"></div>
+              <span class="text-muted text-xs">sel-bg</span>
+            </div>
+            <span class="text-muted text-xs ml-auto">contrast: <span class="text-green">7.2:1 ✓</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Similar themes section -->
+      <div class="border-t border-border/60 pt-6">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-muted text-xs uppercase tracking-widest font-bold">similar cached themes</h2>
+            <p class="text-muted text-xs mt-0.5">similarity score ≥ 0.70 · from local index</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3" role="list" aria-label="Similar themes">
+
+          <!-- Similar 1 -->
+          <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-purple/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0">
+            <div class="h-2 flex" aria-hidden="true">
+              <div class="flex-1" style="background:#0d0d1a"></div>
+              <div class="flex-1" style="background:#ff79c6"></div>
+              <div class="flex-1" style="background:#50fa7b"></div>
+              <div class="flex-1" style="background:#f1fa8c"></div>
+              <div class="flex-1" style="background:#6272a4"></div>
+              <div class="flex-1" style="background:#bd93f9"></div>
+              <div class="flex-1" style="background:#8be9fd"></div>
+              <div class="flex-1" style="background:#f8f8f2"></div>
+            </div>
+            <div class="p-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="text-text text-xs font-bold">neon-dracula</h3>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-purple text-xs">0.87 match</span>
+                    <span class="text-muted text-xs">· community</span>
+                  </div>
+                </div>
+                <span class="text-muted text-xs group-hover:text-purple transition-colors duration-200">use →</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Similar 2 -->
+          <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-purple/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0">
+            <div class="h-2 flex" aria-hidden="true">
+              <div class="flex-1" style="background:#0a0a0f"></div>
+              <div class="flex-1" style="background:#f92672"></div>
+              <div class="flex-1" style="background:#a6e22e"></div>
+              <div class="flex-1" style="background:#e6db74"></div>
+              <div class="flex-1" style="background:#66d9e8"></div>
+              <div class="flex-1" style="background:#ae81ff"></div>
+              <div class="flex-1" style="background:#a1efe4"></div>
+              <div class="flex-1" style="background:#f8f8f2"></div>
+            </div>
+            <div class="p-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="text-text text-xs font-bold">monokai-cyber</h3>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-purple text-xs">0.79 match</span>
+                    <span class="text-muted text-xs">· ai</span>
+                  </div>
+                </div>
+                <span class="text-muted text-xs group-hover:text-purple transition-colors duration-200">use →</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Similar 3 -->
+          <article class="bg-surface border border-border rounded-lg overflow-hidden hover:border-purple/40 transition-all duration-200 cursor-pointer group" role="listitem" tabindex="0">
+            <div class="h-2 flex" aria-hidden="true">
+              <div class="flex-1" style="background:#13111c"></div>
+              <div class="flex-1" style="background:#ff5370"></div>
+              <div class="flex-1" style="background:#c3e88d"></div>
+              <div class="flex-1" style="background:#ffcb6b"></div>
+              <div class="flex-1" style="background:#82aaff"></div>
+              <div class="flex-1" style="background:#c792ea"></div>
+              <div class="flex-1" style="background:#89ddff"></div>
+              <div class="flex-1" style="background:#d0d0d0"></div>
+            </div>
+            <div class="p-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="text-text text-xs font-bold">material-ocean</h3>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-purple text-xs">0.72 match</span>
+                    <span class="text-muted text-xs">· community</span>
+                  </div>
+                </div>
+                <span class="text-muted text-xs group-hover:text-purple transition-colors duration-200">use →</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <!-- Regenerate / Tweak -->
+        <div class="flex gap-2 mt-6">
+          <button onclick="showHome()" class="flex-1 py-2 border border-border text-muted text-xs rounded hover:border-green hover:text-green transition-all duration-200 cursor-pointer">
+            ← new query
+          </button>
+          <button class="flex-1 py-2 border border-purple/30 text-purple text-xs rounded hover:border-purple hover:bg-purple/5 transition-all duration-200 cursor-pointer">
+            regenerate
+          </button>
+          <button class="flex-1 py-2 border border-border text-muted text-xs rounded hover:border-amber hover:text-amber transition-all duration-200 cursor-pointer">
+            contribute theme
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── STATUS BAR ─── -->
+    <footer class="mt-12 pt-4 border-t border-border/40 flex items-center justify-between text-xs text-muted">
+      <span>ghostty-theme v0.1.0 · MIT</span>
+      <span>cache: <span class="text-green">247 themes</span> · provider: <span id="status-provider" class="text-green">ollama</span> · spend today: <span class="text-green">$0.00</span></span>
+      <a href="https://github.com/tty-tinkerwithtech/ghostty-theme" target="_blank" rel="noopener noreferrer" class="hover:text-text transition-colors duration-200 cursor-pointer">
+        tty-tinkerwithtech/ghostty-theme ↗
+      </a>
+    </footer>
+  </main>
+
+  <!-- ─── TOAST NOTIFICATION ─── -->
+  <div id="toast" class="fixed bottom-6 right-6 bg-surface border border-green/40 text-green text-xs px-4 py-2.5 rounded-lg shadow-lg hidden animate-fade-in" role="alert" aria-live="polite"></div>
+
+  <script>
+    // ── Tab switching ─────────────────────────────────────────
+    function switchTab(tab) {
+      const promptPanel = document.getElementById('panel-prompt');
+      const imagePanel  = document.getElementById('panel-image');
+      const tabPrompt   = document.getElementById('tab-prompt');
+      const tabImage    = document.getElementById('tab-image');
+
+      if (tab === 'prompt') {
+        promptPanel.classList.remove('hidden');
+        imagePanel.classList.add('hidden');
+        tabPrompt.classList.add('active','text-green','border-green','bg-green/5');
+        tabPrompt.classList.remove('text-muted','border-transparent');
+        tabPrompt.setAttribute('aria-selected','true');
+        tabImage.classList.remove('active','text-green','border-green','bg-green/5');
+        tabImage.classList.add('text-muted','border-transparent');
+        tabImage.setAttribute('aria-selected','false');
+      } else {
+        imagePanel.classList.remove('hidden');
+        promptPanel.classList.add('hidden');
+        tabImage.classList.add('active','text-green','border-green','bg-green/5');
+        tabImage.classList.remove('text-muted','border-transparent');
+        tabImage.setAttribute('aria-selected','true');
+        tabPrompt.classList.remove('active','text-green','border-green','bg-green/5');
+        tabPrompt.classList.add('text-muted','border-transparent');
+        tabPrompt.setAttribute('aria-selected','false');
+      }
+    }
+
+    // ── Provider selection ────────────────────────────────────
+    function selectProvider(btn) {
+      document.querySelectorAll('.provider-btn').forEach(b => {
+        b.classList.remove('border-green/40','bg-green/10','text-green');
+        b.classList.add('border-border','text-muted');
+        b.setAttribute('aria-checked','false');
+      });
+      btn.classList.remove('border-border','text-muted');
+      btn.classList.add('border-green/40','bg-green/10','text-green');
+      btn.setAttribute('aria-checked','true');
+      document.getElementById('status-provider').textContent = btn.dataset.provider;
+    }
+
+    // ── Prompt helpers ────────────────────────────────────────
+    function setPrompt(text) {
+      const input = document.getElementById('prompt-input');
+      input.value = text;
+      updateCharCount(input);
+      input.focus();
+    }
+
+    function updateCharCount(input) {
+      document.getElementById('char-count').textContent = `${input.value.length}/200`;
+    }
+
+    // ── View switching ────────────────────────────────────────
+    function showResults() {
+      document.getElementById('home-view').classList.add('hidden');
+      document.getElementById('results-view').classList.remove('hidden');
+      document.getElementById('results-view').classList.add('animate-slide-up');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function showHome() {
+      document.getElementById('results-view').classList.add('hidden');
+      document.getElementById('home-view').classList.remove('hidden');
+      document.getElementById('home-view').classList.add('animate-fade-in');
+    }
+
+    // ── Actions ───────────────────────────────────────────────
+    function copyTheme() {
+      const text = document.getElementById('theme-output').textContent;
+      navigator.clipboard.writeText(text).then(() => showToast('✓ copied to clipboard'));
+    }
+
+    function installTheme() {
+      showToast('✓ installed → ~/.config/ghostty/themes/cyberpunk-neon-rain');
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 2500);
+    }
+  </script>
+</body>
+</html>

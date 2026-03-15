@@ -617,7 +617,48 @@ Each entry records `source`, `license` (MIT/CC0 only), and `author`. No propriet
 
 ---
 
-## 17. Open Questions
+## 17. UI/UX Design
+
+### 17.1 Design System
+
+Generated via UI/UX Pro Max. Recommendations applied:
+
+| Token       | Value               | Rationale                                    |
+|-------------|---------------------|----------------------------------------------|
+| Font        | Space Mono 400/700  | Monospace throughout — reinforces terminal aesthetic |
+| Background  | `#0F172A` (slate-900) | Deep dark, reduces eye strain in terminal contexts |
+| Surface     | `#1E293B` (slate-800) | Cards/panels — clear depth without harsh contrast |
+| Border      | `#334155` (slate-700) | Subtle separators                            |
+| CTA/accent  | `#22C55E` (green-500) | "Run green" — universal terminal/CLI signal  |
+| AI accent   | `#818CF8` (indigo-400) | Semantic visual for AI/similarity results   |
+| Text        | `#F8FAFC`           | Near-white, passes 7:1 against `#0F172A`     |
+
+Accessibility: all interactive elements have focus rings, ARIA roles, labels, and `aria-live` regions for dynamic content. `prefers-reduced-motion` respected.
+
+### 17.2 Page Structure
+
+**Home page:**
+1. Header — logo, docs link, GitHub link
+2. Provider selector bar — Ollama / LM Studio / Claude / Gemini / Groq / GPT-4o-mini
+3. Input panel with two tabs:
+   - **Prompt tab** — text input (max 200 chars with live counter), suggestion chips, generate button
+   - **Image tab** — drag-and-drop zone, HTTPS URL input, optional context field, LLM refine toggle
+4. Cached themes grid — color strip preview, name, source, similarity score
+5. Status bar — cache size, active provider, spend today
+
+**Results page:**
+1. Breadcrumb + metadata bar (provider used, cost, tier hit)
+2. Two-column layout:
+   - **Left:** Live terminal preview with syntax-highlighted mock output in the generated theme's colors + scanline effect
+   - **Right:** Raw theme config (copyable), 16-swatch palette grid (8 normal + 8 bright), semantic color indicators, contrast ratio badge
+3. Similar themes section — 3 cards with match score, source, one-click use
+4. Action strip — new query / regenerate / contribute theme
+
+**Mockup file:** `mockup.html` (single-file, Tailwind CDN, fully interactive tab/view switching, no build step)
+
+---
+
+## 19. Open Questions
 
 - [ ] License: MIT (recommended for max community adoption)?
 - [ ] Should we support light themes via a `--light` flag or auto-detect from query?
