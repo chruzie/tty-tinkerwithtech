@@ -64,7 +64,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "SEC-H4 from audit. api/main.py lines 74-77."
     },
     {

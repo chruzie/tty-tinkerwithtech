@@ -31,6 +31,15 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - The test for IP substitution patches `security.ssrf_guard.httpx` (the module object) and asserts on `mock_httpx.get.call_args`
 ---
 
+## 2026-03-15 - US-004
+- Implemented: Added `_metrics_auth` dependency in `api/main.py`; injects into `/metrics` endpoint; reads `METRICS_TOKEN` env var at request time; returns 403 if token is set but header is missing/wrong; documented `METRICS_TOKEN=` in `.env.example`
+- Files changed: api/main.py, .env.example (gitignored — updated locally), tests/test_metrics_auth.py (new)
+- **Learnings for future iterations:**
+  - `.env.example` is in `.gitignore` in this project — cannot be committed; document changes in progress notes instead
+  - FastAPI `Depends()` on a single endpoint is cleaner than middleware for endpoint-specific auth; no need for a full middleware class
+  - `patch.dict("os.environ", {"KEY": "val"})` properly scopes env changes to a test; `os.environ.pop(key, None)` is needed to clear a key that may be set in the ambient env
+---
+
 ## 2026-03-15 - US-003
 - Implemented: Added `re` import and regex validation in `_install_theme()` after the replace/lower step; raises ValueError for any name not matching `^[a-z0-9][a-z0-9_-]*$`
 - Files changed: cli/main.py, tests/test_cli_install.py (new)
