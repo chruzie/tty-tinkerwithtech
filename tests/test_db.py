@@ -1,0 +1,93 @@
+"""Tests for cache/db.py."""
+
+import json
+from pathlib import Path
+
+import pytest
+
+from cache.db import ThemeRepository
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> ThemeRepository:
+    r = ThemeRepository(db_path=tmp_path / "test.db")
+    r.init_db()
+    return r
+
+
+def test_init_db_idempotent(repo: ThemeRepository) -> None:
+    repo.init_db()  # second call must not raise
+    repo.init_db()  # third call must not raise
+
+
+def test_save_and_retrieve_by_hash(repo: ThemeRepository) -> None:
+    theme_data = "palette = 0=#1a1a2e\nbackground = #1a1a2e"
+    row_id = repo.save_theme(
+        query_hash="abc123",
+        theme_data=theme_data,
+        input_type="prompt",
+        provider="ollama",
+        cost_usd=0.0,
+    )
+    assert row_id == 1
+
+    result = repo.get_by_hash("abc123")
+    assert result is not None
+    assert result["theme_data"] == theme_data
+    assert result["input_type"] == "prompt"
+
+
+def test_get_by_hash_missing_returns_none(repo: ThemeRepository) -> None:
+    assert repo.get_by_hash("nonexistent") is None
+
+
+def test_save_with_embedding_roundtrip(repo: ThemeRepository) -> None:
+    embedding = [0.1, 0.2, 0.3, 0.4]
+    repo.save_theme(
+        query_hash="emb_test",
+        theme_data="background = #000000",
+        input_type="prompt",
+        embedding=embedding,
+    )
+    pairs = repo.get_all_embeddings()
+    assert len(pairs) == 1
+    row_id, vector = pairs[0]
+    assert row_id == 1
+    assert len(vector) == 4
+    assert abs(vector[0] - 0.1) < 1e-6
+
+
+def test_embedding_stored_as_json(repo: ThemeRepository, tmp_path: Path) -> None:
+    """Confirm embedding column is a JSON string, not binary."""
+    embedding = [1.0, 2.0]
+    repo.save_theme(
+        query_hash="json_check",
+        theme_data="background = #000000",
+        input_type="prompt",
+        embedding=embedding,
+    )
+    row = repo.get_by_hash("json_check")
+    assert row is not None
+    # embedding must be parseable as JSON
+    parsed = json.loads(row["embedding"])
+    assert parsed == embedding
+
+
+def test_log_cost_and_daily_spend(repo: ThemeRepository) -> None:
+    assert repo.get_daily_spend() == 0.0
+    repo.log_cost("gemini", 0.0005)
+    repo.log_cost("gemini", 0.0005)
+    repo.log_cost("haiku", 0.001)
+    total = repo.get_daily_spend()
+    assert abs(total - 0.002) < 1e-9
+
+
+def test_list_themes(repo: ThemeRepository) -> None:
+    for i in range(3):
+        repo.save_theme(
+            query_hash=f"hash_{i}",
+            theme_data=f"background = #00000{i}",
+            input_type="prompt",
+        )
+    themes = repo.list_themes()
+    assert len(themes) == 3

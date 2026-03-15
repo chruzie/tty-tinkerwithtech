@@ -1,0 +1,42 @@
+[
+  {
+    "name": "cyberpunk-neon-rain",
+    "tags": ["dark", "neon", "cyberpunk"],
+    "ghostty_data": "palette = 0 = #0d0d0d\npalette = 1 = #ff003c\npalette = 2 = #00ff9f\npalette = 3 = #ffe600\npalette = 4 = #00b4ff\npalette = 5 = #cc00ff\npalette = 6 = #00e5ff\npalette = 7 = #c0c0c0\npalette = 8 = #333333\npalette = 9 = #ff6680\npalette = 10 = #66ffcc\npalette = 11 = #ffff66\npalette = 12 = #66ccff\npalette = 13 = #e066ff\npalette = 14 = #66f2ff\npalette = 15 = #ffffff\nbackground = #0d0d0d\nforeground = #00ff9f\ncursor-color = #00e5ff\nselection-background = #1a1a2e\nselection-foreground = #00ff9f"
+  },
+  {
+    "name": "tokyo-midnight",
+    "tags": ["dark", "blue", "tokyo"],
+    "ghostty_data": "palette = 0 = #1a1b26\npalette = 1 = #f7768e\npalette = 2 = #9ece6a\npalette = 3 = #e0af68\npalette = 4 = #7aa2f7\npalette = 5 = #bb9af7\npalette = 6 = #7dcfff\npalette = 7 = #a9b1d6\npalette = 8 = #414868\npalette = 9 = #f7768e\npalette = 10 = #9ece6a\npalette = 11 = #e0af68\npalette = 12 = #7aa2f7\npalette = 13 = #bb9af7\npalette = 14 = #7dcfff\npalette = 15 = #c0caf5\nbackground = #1a1b26\nforeground = #c0caf5\ncursor-color = #c0caf5\nselection-background = #283457\nselection-foreground = #c0caf5"
+  },
+  {
+    "name": "aurora-borealis-ice",
+    "tags": ["dark", "green", "aurora"],
+    "ghostty_data": "palette = 0 = #0a1628\npalette = 1 = #ff6b6b\npalette = 2 = #4ecdc4\npalette = 3 = #ffe66d\npalette = 4 = #4facde\npalette = 5 = #a8edea\npalette = 6 = #88f2e8\npalette = 7 = #c7f2f0\npalette = 8 = #1a2e4a\npalette = 9 = #ff8e8e\npalette = 10 = #72e8df\npalette = 11 = #fff18e\npalette = 12 = #7fc5e8\npalette = 13 = #c2f0ed\npalette = 14 = #a8f5ef\npalette = 15 = #e8fdfc\nbackground = #0a1628\nforeground = #c7f2f0\ncursor-color = #4ecdc4\nselection-background = #0f2440\nselection-foreground = #c7f2f0"
+  },
+  {
+    "name": "dracula-classic",
+    "tags": ["dark", "purple", "dracula"],
+    "ghostty_data": "palette = 0 = #282a36\npalette = 1 = #ff5555\npalette = 2 = #50fa7b\npalette = 3 = #f1fa8c\npalette = 4 = #6272a4\npalette = 5 = #ff79c6\npalette = 6 = #8be9fd\npalette = 7 = #f8f8f2\npalette = 8 = #44475a\npalette = 9 = #ff6e6e\npalette = 10 = #69ff94\npalette = 11 = #ffffa5\npalette = 12 = #d6acff\npalette = 13 = #ff92df\npalette = 14 = #a4ffff\npalette = 15 = #ffffff\nbackground = #282a36\nforeground = #f8f8f2\ncursor-color = #f8f8f2\nselection-background = #44475a\nselection-foreground = #f8f8f2"
+  },
+  {
+    "name": "nord-ocean",
+    "tags": ["dark", "blue", "nord"],
+    "ghostty_data": "palette = 0 = #2e3440\npalette = 1 = #bf616a\npalette = 2 = #a3be8c\npalette = 3 = #ebcb8b\npalette = 4 = #81a1c1\npalette = 5 = #b48ead\npalette = 6 = #88c0d0\npalette = 7 = #e5e9f0\npalette = 8 = #4c566a\npalette = 9 = #bf616a\npalette = 10 = #a3be8c\npalette = 11 = #ebcb8b\npalette = 12 = #81a1c1\npalette = 13 = #b48ead\npalette = 14 = #8fbcbb\npalette = 15 = #eceff4\nbackground = #2e3440\nforeground = #d8dee9\ncursor-color = #d8dee9\nselection-background = #434c5e\nselection-foreground = #d8dee9"
+  },
+  {
+    "name": "gruvbox-dark",
+    "tags": ["dark", "warm", "gruvbox"],
+    "ghostty_data": "palette = 0 = #282828\npalette = 1 = #cc241d\npalette = 2 = #98971a\npalette = 3 = #d79921\npalette = 4 = #458588\npalette = 5 = #b16286\npalette = 6 = #689d6a\npalette = 7 = #a89984\npalette = 8 = #928374\npalette = 9 = #fb4934\npalette = 10 = #b8bb26\npalette = 11 = #fabd2f\npalette = 12 = #83a598\npalette = 13 = #d3869b\npalette = 14 = #8ec07c\npalette = 15 = #ebdbb2\nbackground = #282828\nforeground = #ebdbb2\ncursor-color = #ebdbb2\nselection-background = #3c3836\nselection-foreground = #ebdbb2"
+  },
+  {
+    "name": "solarized-dark",
+    "tags": ["dark", "solarized"],
+    "ghostty_data": "palette = 0 = #073642\npalette = 1 = #dc322f\npalette = 2 = #859900\npalette = 3 = #b58900\npalette = 4 = #268bd2\npalette = 5 = #d33682\npalette = 6 = #2aa198\npalette = 7 = #eee8d5\npalette = 8 = #002b36\npalette = 9 = #cb4b16\npalette = 10 = #586e75\npalette = 11 = #657b83\npalette = 12 = #839496\npalette = 13 = #6c71c4\npalette = 14 = #93a1a1\npalette = 15 = #fdf6e3\nbackground = #002b36\nforeground = #839496\ncursor-color = #839496\nselection-background = #073642\nselection-foreground = #eee8d5"
+  },
+  {
+    "name": "monokai-pro",
+    "tags": ["dark", "monokai"],
+    "ghostty_data": "palette = 0 = #272822\npalette = 1 = #f92672\npalette = 2 = #a6e22e\npalette = 3 = #f4bf75\npalette = 4 = #66d9e8\npalette = 5 = #ae81ff\npalette = 6 = #a1efe4\npalette = 7 = #f8f8f2\npalette = 8 = #75715e\npalette = 9 = #f92672\npalette = 10 = #a6e22e\npalette = 11 = #f4bf75\npalette = 12 = #66d9e8\npalette = 13 = #ae81ff\npalette = 14 = #a1efe4\npalette = 15 = #f9f8f5\nbackground = #272822\nforeground = #f8f8f2\ncursor-color = #f8f8f2\nselection-background = #49483e\nselection-foreground = #f8f8f2"
+  }
+]

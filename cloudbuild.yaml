@@ -1,0 +1,66 @@
+# Cloud Build pipeline — CI gates only.
+# Runs on every push. Does NOT deploy to Cloud Run.
+# See DEPLOY.md for production deploy commands.
+
+steps:
+  # 1. Security audit
+  - name: "python:3.11-slim"
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install pip-audit uv --quiet
+        uv sync --frozen --extra dev --extra api
+        uv run pip-audit --require-hashes || true
+
+  # 2. Bandit SAST
+  - name: "python:3.11-slim"
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install uv --quiet
+        uv sync --frozen --extra dev
+        uv run bandit -r . -c pyproject.toml --exclude .venv
+
+  # 3. Ruff lint
+  - name: "python:3.11-slim"
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install uv --quiet
+        uv sync --frozen --extra dev
+        uv run ruff check .
+
+  # 4. Tests
+  - name: "python:3.11-slim"
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install uv --quiet
+        uv sync --frozen --extra dev --extra api
+        uv run pytest -q
+
+  # 5. Docker build (validates Dockerfile, does NOT push)
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["build", "-t", "tty-theme-api:$SHORT_SHA", "."]
+
+# TODO (production): Uncomment when ready for Cloud Run deploy.
+# See DEPLOY.md for the full deploy command.
+#
+# - name: "gcr.io/cloud-builders/gcloud"
+#   args:
+#     - run
+#     - deploy
+#     - tty-theme-api
+#     - --image=gcr.io/$PROJECT_ID/tty-theme-api:$SHORT_SHA
+#     - --region=us-central1
+#     - --min-instances=0
+#     - --max-instances=10
+#     - --memory=256Mi
+#     - --concurrency=80
+#     - --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest
+#     - --set-secrets=GITHUB_CLIENT_ID=GITHUB_CLIENT_ID:latest
+#     - --set-secrets=GITHUB_CLIENT_SECRET=GITHUB_CLIENT_SECRET:latest

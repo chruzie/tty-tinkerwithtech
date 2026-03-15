@@ -42,6 +42,17 @@ Thumbs.db
 .env
 .env.*
 secrets.toml
+*.key
+*.pem
+
+# Firebase emulator state
+.firebase-data/
+.firebase/
+.firebaserc.local
+
+# Web build output
+web/node_modules/
+web/dist/
 
 # Serena (IDE tooling)
 .serena/
