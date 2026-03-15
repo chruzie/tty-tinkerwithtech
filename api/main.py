@@ -154,20 +154,18 @@ def generate(req: GenerateRequest, request: Request):
 
         if req.prompt:
             from modes.prompt_mode import generate_from_prompt
-            theme_str = generate_from_prompt(
+            theme_str, tier = generate_from_prompt(
                 req.prompt, provider=provider, target=req.target, repo=repo
             )
-            tier = 3
         else:
             from modes.image_mode import generate_from_image
-            theme_str = generate_from_image(
+            theme_str, tier = generate_from_image(
                 req.image_url,  # type: ignore[arg-type]
                 target=req.target,
                 refine=req.refine,
                 provider=provider,
                 repo=repo,
             )
-            tier = 1
 
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -13,6 +13,8 @@ from image.loader import load_image
 from image.palette_mapper import map_to_theme
 from image.phash import compute_phash
 
+_CACHE_SERIALIZER = GhosttySerializer()  # canonical on-disk format
+
 _SERIALIZERS = {
     "ghostty": GhosttySerializer(),
     "iterm2": ITerm2Serializer(),
@@ -26,7 +28,7 @@ def generate_from_image(
     provider: object | None = None,
     repo: ThemeRepository | None = None,
     skip_cache: bool = False,
-) -> str:
+) -> tuple[str, int]:
     """Run the full image-mode pipeline.
 
     Args:
@@ -38,7 +40,8 @@ def generate_from_image(
         skip_cache: bypass cache lookup.
 
     Returns:
-        Serialized theme string in the requested *target* format.
+        Tuple of (serialized theme string in the requested *target* format, tier).
+        tier=1 for pHash cache hit, tier=3 for fresh extraction.
     """
     if repo is None:
         repo = ThemeRepository()
@@ -56,7 +59,8 @@ def generate_from_image(
     if not skip_cache:
         cached = repo.get_by_hash(phash)
         if cached:
-            return cached["theme_data"]
+            palette_cached = validate_theme(cached["theme_data"])
+            return serializer.serialize(palette_cached), 1
 
     # B4: k-means colour extraction
     colors = extract_palette(img, n_colors=16)
@@ -82,13 +86,13 @@ def generate_from_image(
     validated = validate_theme(palette_str)
     theme_str = serializer.serialize(validated)
 
-    # B8: Cache result
+    # B8: Cache result (always store in canonical Ghostty format)
     repo.save_theme(
         query_hash=phash,
-        theme_data=theme_str,
+        theme_data=_CACHE_SERIALIZER.serialize(validated),
         input_type="image",
         source="image",
         provider=getattr(provider, "name", None) if refine else None,
     )
 
-    return theme_str
+    return theme_str, 3

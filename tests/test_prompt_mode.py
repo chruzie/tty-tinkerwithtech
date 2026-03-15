@@ -34,8 +34,9 @@ class TestPromptMode:
         # Cache must contain a valid Ghostty-format theme (canonical format)
         tmp_repo.save_theme(query_hash=qh, theme_data=_VALID_THEME, input_type="prompt")
 
-        result = generate_from_prompt("ocean sunset", repo=tmp_repo)
+        result, tier = generate_from_prompt("ocean sunset", repo=tmp_repo)
         assert "palette" in result
+        assert tier == 1
 
     def test_cache_hit_reserializes_to_requested_target(self, tmp_repo):
         """Tier-1 cache hit with Ghostty-cached data should return iTerm2 format when asked."""
@@ -49,9 +50,10 @@ class TestPromptMode:
         # Seed cache in Ghostty (canonical) format
         tmp_repo.save_theme(query_hash=qh, theme_data=_VALID_THEME, input_type="prompt")
 
-        result = generate_from_prompt("ocean sunset", target="iterm2", repo=tmp_repo)
+        result, tier = generate_from_prompt("ocean sunset", target="iterm2", repo=tmp_repo)
         # iTerm2 output is XML plist
         assert "<?xml" in result or "<plist" in result or "dict" in result
+        assert tier == 1
 
     def test_llm_called_on_cache_miss(self, tmp_repo):
         from modes.prompt_mode import generate_from_prompt
@@ -62,11 +64,12 @@ class TestPromptMode:
         mock_provider.generate.return_value = _VALID_THEME
 
         with patch("cache.embeddings.embed", side_effect=ImportError):
-            result = generate_from_prompt(
+            result, tier = generate_from_prompt(
                 "cyberpunk rain", provider=mock_provider, repo=tmp_repo, skip_cache=False
             )
 
         assert "palette" in result
+        assert tier == 3
         mock_provider.generate.assert_called_once()
 
     def test_retries_on_validation_failure(self, tmp_repo):
@@ -83,11 +86,12 @@ class TestPromptMode:
         ]
 
         with patch("cache.embeddings.embed", side_effect=ImportError):
-            result = generate_from_prompt(
+            result, tier = generate_from_prompt(
                 "retry test", provider=mock_provider, repo=tmp_repo, skip_cache=True
             )
 
         assert "palette" in result
+        assert tier == 3
         assert mock_provider.generate.call_count == 3
 
     def test_max_retries_raises(self, tmp_repo):

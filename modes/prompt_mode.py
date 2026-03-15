@@ -32,11 +32,12 @@ def generate_from_prompt(
     target: str = "ghostty",
     repo: ThemeRepository | None = None,
     skip_cache: bool = False,
-) -> str:
+) -> tuple[str, int]:
     """Run the full prompt-mode pipeline.
 
     Returns:
-        Serialized theme string in the requested *target* format.
+        Tuple of (serialized theme string in the requested *target* format, tier).
+        tier=1 for exact hash hit, tier=2 for similarity hit, tier=3 for LLM generation.
 
     Raises:
         ValueError: if the query is empty after sanitization.
@@ -60,7 +61,7 @@ def generate_from_prompt(
         cached = repo.get_by_hash(query_hash)
         if cached:
             palette = validate_theme(cached["theme_data"])
-            return serializer.serialize(palette)
+            return serializer.serialize(palette), 1
 
     # A4: Similarity search (tier 2) — requires embeddings module
     if not skip_cache:
@@ -73,7 +74,7 @@ def generate_from_prompt(
                 row = repo.get_by_id(similar_id)
                 if row:
                     palette = validate_theme(row["theme_data"])
-                    return serializer.serialize(palette)
+                    return serializer.serialize(palette), 2
         except ImportError:
             pass  # sentence-transformers not installed, skip tier 2
 
@@ -137,4 +138,4 @@ def generate_from_prompt(
     if cost > 0 and hasattr(provider, "name"):
         repo.log_cost(provider.name, cost)
 
-    return theme_str
+    return theme_str, 3

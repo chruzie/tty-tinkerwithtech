@@ -68,11 +68,11 @@ def generate(
 
         if prompt:
             from modes.prompt_mode import generate_from_prompt
-            theme_str = generate_from_prompt(prompt, provider=provider, target=target)
+            theme_str, _ = generate_from_prompt(prompt, provider=provider, target=target)
         else:
             from modes.image_mode import generate_from_image
             src = str(image) if image else ""
-            theme_str = generate_from_image(src, target=target, refine=refine, provider=provider)
+            theme_str, _ = generate_from_image(src, target=target, refine=refine, provider=provider)
 
     except Exception as exc:  # noqa: BLE001
         typer.echo(f"Error: {exc}", err=True)
