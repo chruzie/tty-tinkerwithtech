@@ -150,3 +150,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `# noqa: PLR2004` needed on `len(data) >= 12` comparison (ruff magic number rule)
   - Use `struct.pack("<I", n)` to generate RIFF chunk size bytes in tests
 ---
+
+## 2026-03-15 - US-016
+- Implemented: Added `UNIQUE(date, provider)` to `cost_log` DDL; replaced SELECT+INSERT/UPDATE with `INSERT ... ON CONFLICT DO UPDATE` UPSERT in `log_cost()`
+- Files changed: cache/db.py, tests/test_db.py
+- **Learnings for future iterations:**
+  - SQLite supports `ON CONFLICT(col) DO UPDATE SET ...` syntax since 3.24 (Python 3.11 ships 3.39+, so always safe)
+  - `excluded.cost_usd` refers to the value that WOULD have been inserted — standard UPSERT pattern
+  - `init_db()` uses `CREATE TABLE IF NOT EXISTS` — adding a UNIQUE constraint to an already-created table requires `DROP TABLE IF EXISTS` or a migration; for new installs the DDL change is enough
+---
