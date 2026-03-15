@@ -1,4 +1,8 @@
-"""MiniLM local embeddings + cosine similarity for tier-2 cache lookups."""
+"""MiniLM local embeddings + cosine similarity for tier-2 cache lookups.
+
+sentence-transformers is an optional dependency. Install it with:
+    uv sync --extra embeddings
+"""
 
 from __future__ import annotations
 
@@ -11,8 +15,13 @@ _model = None  # Loaded lazily
 def _get_model():  # type: ignore[no-untyped-def]
     global _model
     if _model is None:
-        from sentence_transformers import SentenceTransformer
-
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install tty-theme[embeddings] to enable similarity search: "
+                "uv sync --extra embeddings"
+            ) from exc
         _model = SentenceTransformer(_MODEL_NAME)
     return _model
 

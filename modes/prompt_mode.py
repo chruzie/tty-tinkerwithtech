@@ -75,7 +75,7 @@ def generate_from_prompt(
                 if row:
                     palette = validate_theme(row["theme_data"])
                     return serializer.serialize(palette), 2
-        except ImportError:
+        except (ImportError, RuntimeError):
             pass  # sentence-transformers not installed, skip tier 2
 
     # A5-A6: LLM generation with retries
@@ -119,7 +119,7 @@ def generate_from_prompt(
         from cache.embeddings import embed
 
         embedding = embed(clean_query)
-    except ImportError:
+    except (ImportError, RuntimeError):
         pass
 
     # Cache always stores Ghostty format (canonical) so validate_theme can re-parse
