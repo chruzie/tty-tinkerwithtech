@@ -4,24 +4,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 _MAX_BYTES = 20 * 1024 * 1024  # 20 MB
-_ALLOWED_MAGIC = {
-    b"\xff\xd8\xff": "jpeg",
-    b"\x89PNG": "png",
-    b"GIF8": "gif",
-    b"RIFF": "webp",  # RIFF....WEBP
-    b"\x00\x00\x00": "mp4/heif",  # broad match, filtered later by PIL
-}
 
 _ALLOWED_FORMATS = {"JPEG", "PNG", "GIF", "WEBP"}
 
 
 def _check_magic(data: bytes) -> None:
-    for magic, _fmt in _ALLOWED_MAGIC.items():
-        if data[: len(magic)] == magic:
-            return
+    """Reject files whose magic bytes don't match a supported image type."""
+    # JPEG: starts with FF D8 FF
+    if data[:3] == b"\xff\xd8\xff":
+        return
+    # PNG: starts with 89 50 4E 47
+    if data[:4] == b"\x89PNG":
+        return
+    # GIF: starts with GIF8
+    if data[:4] == b"GIF8":
+        return
+    # WebP: RIFF container AND bytes 8-11 == WEBP (rejects WAV and other RIFF types)
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":  # noqa: PLR2004
+        return
     raise ValueError("File is not a recognised image format (magic bytes check failed)")
 
 
@@ -57,7 +60,10 @@ def load_image(source: str | Path) -> Image.Image:
 
     import io
 
-    img = Image.open(io.BytesIO(data))
+    try:
+        img = Image.open(io.BytesIO(data))
+    except UnidentifiedImageError as exc:
+        raise ValueError("Unsupported or corrupt image format") from exc
 
     if img.format not in _ALLOWED_FORMATS:
         raise ValueError(f"Unsupported image format: {img.format}")
