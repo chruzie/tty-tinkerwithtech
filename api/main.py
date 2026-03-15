@@ -122,7 +122,7 @@ async def health():
 
 
 @app.post("/v1/generate", response_model=GenerateResponse)
-async def generate(req: GenerateRequest, request: Request):
+def generate(req: GenerateRequest, request: Request):
     if not req.prompt and not req.image_url:
         raise HTTPException(status_code=422, detail="Provide 'prompt' or 'image_url'.")
 
