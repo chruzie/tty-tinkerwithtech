@@ -5,9 +5,9 @@ from __future__ import annotations
 import hashlib
 import os
 import time
-from collections import defaultdict
 from collections.abc import Callable
 
+from cachetools import TTLCache
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -32,8 +32,20 @@ class _TokenBucket:
         return False
 
 
-_minute_buckets: dict[str, _TokenBucket] = defaultdict(lambda: _TokenBucket(10, 10 / 60))
-_hour_buckets: dict[str, _TokenBucket] = defaultdict(lambda: _TokenBucket(50, 50 / 3600))
+_minute_buckets: TTLCache = TTLCache(maxsize=10000, ttl=3600)
+_hour_buckets: TTLCache = TTLCache(maxsize=10000, ttl=3600)
+
+
+def _get_minute_bucket(ip_hash: str) -> _TokenBucket:
+    if ip_hash not in _minute_buckets:
+        _minute_buckets[ip_hash] = _TokenBucket(10, 10 / 60)
+    return _minute_buckets[ip_hash]  # type: ignore[return-value]
+
+
+def _get_hour_bucket(ip_hash: str) -> _TokenBucket:
+    if ip_hash not in _hour_buckets:
+        _hour_buckets[ip_hash] = _TokenBucket(50, 50 / 3600)
+    return _hour_buckets[ip_hash]  # type: ignore[return-value]
 
 
 def _ip_hash(request: Request) -> str:
@@ -66,7 +78,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         ip_hash = _ip_hash(request)
 
-        if not _minute_buckets[ip_hash].consume() or not _hour_buckets[ip_hash].consume():
+        if not _get_minute_bucket(ip_hash).consume() or not _get_hour_bucket(ip_hash).consume():
             return Response(
                 content='{"detail":"Rate limit exceeded"}',
                 status_code=429,
