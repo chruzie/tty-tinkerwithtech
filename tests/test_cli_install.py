@@ -53,3 +53,22 @@ def test_install_rejects_dotdot_after_normalise(tmp_path):
     with _mock_dir(tmp_path):
         with pytest.raises(ValueError, match="Invalid theme name"):
             _install_theme("../../Evil", "data", "ghostty")
+
+
+def test_install_returns_none_if_exists_without_force(tmp_path):
+    """Overwrite guard: returns None and does not overwrite when file exists."""
+    with _mock_dir(tmp_path):
+        dest = _install_theme("my-theme", "original", "ghostty")
+        assert dest is not None
+        result = _install_theme("my-theme", "new-content", "ghostty", force=False)
+    assert result is None
+    assert dest.read_text() == "original"  # file not overwritten
+
+
+def test_install_overwrites_with_force(tmp_path):
+    """--force allows overwrite of an existing theme."""
+    with _mock_dir(tmp_path):
+        _install_theme("my-theme", "original", "ghostty")
+        dest = _install_theme("my-theme", "updated", "ghostty", force=True)
+    assert dest is not None
+    assert dest.read_text() == "updated"

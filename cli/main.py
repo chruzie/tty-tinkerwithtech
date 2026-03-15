@@ -22,8 +22,12 @@ _GHOSTTY_THEMES = Path.home() / ".config" / "ghostty" / "themes"
 _ITERM2_THEMES = Path.home() / "Library" / "Application Support" / "iTerm2" / "DynamicProfiles"
 
 
-def _install_theme(name: str, content: str, target: str) -> Path:
-    """Write theme file to the target application's themes directory."""
+def _install_theme(name: str, content: str, target: str, force: bool = False) -> Path | None:
+    """Write theme file to the target application's themes directory.
+
+    Returns:
+        Destination path on success, or None if dest exists and force=False.
+    """
     if target == "ghostty":
         dest_dir = _GHOSTTY_THEMES
         ext = ""  # Ghostty themes have no extension
@@ -41,6 +45,12 @@ def _install_theme(name: str, content: str, target: str) -> Path:
             "and contain only letters, digits, hyphens, and underscores."
         )
     dest = dest_dir / f"{safe_name}{ext}"
+    if dest.exists() and not force:
+        typer.echo(
+            f"Theme {safe_name!r} already exists at {dest}. Use --force to overwrite.",
+            err=True,
+        )
+        return None
     dest.write_text(content)
     return dest
 
@@ -56,6 +66,7 @@ def generate(
     name: str | None = typer.Option(None, "--name", "-n", help="Theme name (with --install)."),
     provider_name: str | None = typer.Option(None, "--provider", help="Force a specific provider."),
     refine: bool = typer.Option(False, "--refine", help="LLM refinement pass (image mode only)."),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing theme."),
 ) -> None:
     """Generate a terminal colour theme."""
     if not prompt and not image:
@@ -107,8 +118,23 @@ def generate(
         if not name:
             typer.echo("Error: --name is required when using --install.", err=True)
             raise typer.Exit(1)
-        dest = _install_theme(name, theme_str, target)
+        dest = _install_theme(name, theme_str, target, force=force)
+        if dest is None:
+            raise typer.Exit(1)
         typer.echo(f"\nInstalled to: {dest}", err=True)
+        if target == "ghostty":
+            safe = name.replace(" ", "-").lower()
+            typer.echo(
+                f"To activate: add `theme = {safe}` to ~/.config/ghostty/config",
+                err=True,
+            )
+        elif target == "iterm2":
+            safe = name.replace(" ", "-").lower()
+            typer.echo(
+                f"To activate: open iTerm2 → Preferences → Profiles → Colors "
+                f"→ Color Presets → {safe}",
+                err=True,
+            )
 
 
 # ── config commands ────────────────────────────────────────────────────────────
