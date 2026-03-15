@@ -324,7 +324,7 @@
         "Typecheck passes"
       ],
       "priority": 21,
-      "passes": false,
+      "passes": true,
       "notes": "PERF-L2 from audit. pyproject.toml line 25."
     },
     {
@@ -338,7 +338,7 @@
         "Typecheck passes"
       ],
       "priority": 22,
-      "passes": false,
+      "passes": true,
       "notes": "BUG-17 and BUG-16 from audit."
     }
   ]

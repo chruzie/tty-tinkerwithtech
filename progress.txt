@@ -192,3 +192,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `_install_theme` return type changed from `Path` to `Path | None` — call sites must check for None before using result
   - Activation hint uses the same safe_name transform (replace+lower) so it matches the installed filename
 ---
+
+## 2026-03-15 - US-021 & US-022
+- US-021: Moved sentence-transformers to [project.optional-dependencies] embeddings; removed tomli conditional; wrapped SentenceTransformer import in _get_model(); updated except guards in prompt_mode
+- US-022: Changed GhosttySerializer.file_extension() from '.ghostty' to ''; updated test
+- Files changed: pyproject.toml, cache/embeddings.py, modes/prompt_mode.py, generator/serializers/ghostty.py, tests/test_serializers.py
+- **Learnings for future iterations:**
+  - After moving sentence-transformers out of core deps, the except ImportError in prompt_mode tier-2 must become except (ImportError, RuntimeError) because the module itself imports fine but raises RuntimeError at runtime
+  - tomli conditional (python_version < '3.11') is unreachable with requires-python>=3.11 — tomllib is stdlib
+---
