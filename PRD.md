@@ -1,10 +1,10 @@
 # Product Requirements Document
 ## tty-theme: AI Terminal Theme Generator — Ralph Implementation PRD
 
-**Version:** 0.5
+**Version:** 0.6
 **Status:** Draft
 **Author:** chruzcruz
-**Date:** 2026-03-14
+**Date:** 2026-03-15
 
 ---
 
@@ -235,18 +235,33 @@ Any server exposing an OpenAI-compatible `/v1/chat/completions` endpoint works a
 
 ### 6.2 Provider Resolution Chain
 
-The tool resolves a provider in this order (first available wins):
+#### CLI / Self-hosted Mode
+
+The CLI resolves a provider in this order (first available wins):
 
 ```
 1. --provider flag (explicit user override)
 2. GHOSTTY_PROVIDER env var
-3. ghostty-theme config set provider <name>
+3. tty-theme config set provider <name>
 4. Auto-detect: probe Ollama (localhost:11434) → LM Studio (localhost:1234) → llamafile (localhost:8080)
 5. First cloud provider with a configured key (order: Gemini → Groq → Haiku → GPT-4o-mini → Mistral)
 6. Error: no provider available
 ```
 
-This means **a user with Ollama running pays $0** and never needs to configure anything. A user on a machine with no local server is prompted once to set a cloud key.
+A user with Ollama running pays $0 and never needs to configure anything. A user on a machine with no local server is prompted once to set a cloud key.
+
+#### Web UI / Hosted Mode
+
+The hosted web app **does not run Ollama or any local model server**. Local model providers (Ollama, LM Studio, llamafile) are a CLI-only feature. In the web UI, provider resolution is:
+
+```
+1. Server-side default: Gemini 2.0 Flash Lite (free tier, key in Secret Manager)
+2. User BYOK: if the user supplies their own API key in the browser, it overrides the default
+   - Key is stored in browser localStorage only
+   - Key is never sent to or stored on the tty-theme server
+   - See §6.4 for full BYOK security model
+3. If server-side quota exceeded: HTTP 429 with prompt to add BYOK key
+```
 
 ### 6.3 Configuration & Key Storage
 
@@ -284,6 +299,74 @@ API keys are **never written to `config.toml`**. They live exclusively in the OS
 
 ---
 
+### 6.4 BYOK (Bring Your Own Key) — Web UI
+
+Users who want to use a provider other than the server-side Gemini default (or who hit the free quota) can supply their own API key in the web UI.
+
+#### Key Lifecycle
+
+```
+User enters key in browser UI
+        │
+        ▼
+Key stored in browser localStorage only
+("tty-theme:byok:<provider>")
+        │
+        ├─[Option A — direct call]──▶ Browser calls provider API directly (e.g. Gemini, OpenAI)
+        │                             CORS must allow browser origin (Gemini ✓, OpenAI ✓, Groq ✓)
+        │                             Key never touches tty-theme servers.
+        │
+        └─[Option B — ephemeral header]──▶ Key sent as `X-Provider-Key: <key>` HTTP header
+                                           to Cloud Run for providers that block browser CORS.
+                                           Cloud Run uses key for ONE request, discards immediately.
+                                           Key is NOT logged, NOT written to Firestore, NOT cached.
+```
+
+Option A is always preferred. Option B is a fallback for CORS-restricted providers (e.g., Anthropic, Mistral).
+
+#### What tty-theme Never Does with BYOK Keys
+
+- Never writes user keys to Firestore, Secret Manager, SQLite, or any persistent storage.
+- Never logs user keys (Cloud Run log filter redacts `sk-`, `sk-ant-`, `AIza` patterns).
+- Never transmits keys to any third party except the user's chosen provider.
+- Never retains ephemeral header keys after the HTTP response is sent.
+
+#### UI Security Disclaimer
+
+The following disclaimer is displayed in the web UI at key entry time and in the settings panel:
+
+> **⚠ Security Notice — Bring Your Own Key**
+>
+> Your API key is stored locally in this browser only. It is never sent to or stored on tty-theme's servers, except as an ephemeral pass-through for providers that do not support browser-direct calls (it is discarded immediately after the request).
+>
+> **tty-theme is not responsible for unauthorized use of your key.** If you believe your key has been compromised, revoke it immediately in your provider's dashboard. Use with caution on shared or public computers. Consider using a key with a spending limit set at your provider.
+
+#### Supported BYOK Providers (Web UI)
+
+| Provider | BYOK key | Direct browser call (Option A) | Notes |
+|----------|----------|-------------------------------|-------|
+| Google Gemini | `AIza...` | ✓ Yes | Default server provider also; BYOK removes quota dependency |
+| Groq | `gsk_...` | ✓ Yes | Free tier, fast |
+| OpenAI | `sk-...` | ✓ Yes | GPT-4o-mini |
+| Anthropic | `sk-ant-...` | ✗ No (CORS restricted) | Ephemeral header (Option B) |
+| Mistral | `...` | ✗ No (CORS restricted) | Ephemeral header (Option B) |
+
+Ollama/LM Studio/llamafile are **not available in the web UI**. They are CLI-only features that run on the user's local machine. The web UI cannot reach a localhost server running in the user's browser environment.
+
+#### localStorage Key Names
+
+```
+tty-theme:byok:gemini     → AIza...
+tty-theme:byok:groq       → gsk_...
+tty-theme:byok:openai     → sk-...
+tty-theme:byok:anthropic  → sk-ant-...
+tty-theme:byok:mistral    → ...
+```
+
+Keys are cleared on "Clear Keys" button click or `localStorage.clear()`. They persist across browser sessions until explicitly cleared.
+
+---
+
 ## 7. Safety, Security & Abuse
 
 ### 7.1 Prompt Mode — Input Safety
@@ -318,6 +401,9 @@ API keys are **never written to `config.toml`**. They live exclusively in the OS
 | Key in `config.toml`            | Writing a key to the config file is a hard error with a clear message. |
 | Accidental key commit to git    | `.gitignore` excludes `.env`. `pre-commit` hook runs `git-secrets` or `detect-secrets`. |
 | Key rotation                    | `ghostty-theme config set-key <provider>` overwrites the keychain entry. |
+| BYOK key in server logs (web)   | Cloud Run log filter redacts `AIza`, `sk-`, `sk-ant-`, `gsk_` patterns. Ephemeral header keys never written to any log sink. |
+| BYOK key in Firestore (web)     | Firestore write path has no key field. Schema enforced by application layer — keys are not a valid field in any collection. |
+| BYOK key on shared computer     | Web UI warns user at key entry time; "Clear Keys" button in settings deletes all `tty-theme:byok:*` localStorage entries immediately. |
 
 ### 7.4 Local Model Security
 
@@ -453,14 +539,26 @@ Access via: `https://generativelanguage.googleapis.com/v1beta/models/{model}:gen
 Key stored in: Secret Manager → `GEMINI_API_KEY`
 No Vertex AI ToS acceptance required. Free forever under quota.
 
-**Provider chain (updated):**
+**Provider chain — CLI / self-hosted:**
 ```
 Ollama (local, free) →
 LM Studio (local, free) →
+llamafile (local, free) →
 Gemini 2.0 Flash Lite (cloud, FREE up to 1M tokens/day) →
 Claude Haiku (cloud, ~$0.001/query) →
 GPT-4o-mini (cloud, ~$0.001/query)
 ```
+
+**Provider chain — hosted web app:**
+```
+[Server-side] Gemini 2.0 Flash Lite (free tier, key in Secret Manager)
+    └─ Quota exceeded → prompt user for BYOK key
+[BYOK]  User-supplied key (from browser localStorage, see §6.4)
+    ├─ Direct: Gemini / OpenAI / Groq (browser → provider, zero server involvement)
+    └─ Ephemeral: Anthropic / Mistral (X-Provider-Key header, never persisted)
+```
+
+> **Note:** Ollama, LM Studio, and llamafile are **not available** in the hosted web app. They are CLI-only features. The hosted server does not run a local model instance — doing so would create idle cost and a larger attack surface. Users who want local model generation must use the CLI.
 
 **Migration path: SQLite → Firestore**
 
@@ -696,22 +794,25 @@ CREATE TABLE audit_log (
 
 ## 13. Tech Stack
 
-| Layer               | CLI / Self-hosted                | API / Web mode                     |
-|---------------------|----------------------------------|------------------------------------|
-| Language            | Python 3.11+                     | Python 3.11+                       |
-| CLI framework       | Typer                            | —                                  |
-| Web framework       | —                                | FastAPI + uvicorn                  |
-| DB                  | SQLite                           | PostgreSQL + pgvector              |
-| Cache               | SQLite                           | Redis                              |
-| Image processing    | Pillow + scikit-learn (k-means)  | Same                               |
-| Perceptual hash     | `imagehash`                      | Same                               |
-| Embeddings          | `sentence-transformers` MiniLM   | Same model, pgvector storage       |
-| Embedding storage   | JSON array in SQLite TEXT column | pgvector                           |
-| Secret storage      | `keyring` (OS keychain)          | Env vars / secrets manager         |
-| LLM adapters        | Ollama, LM Studio, llamafile, Anthropic, OpenAI, Gemini, Groq, Mistral | Same |
-| Security scanning   | `pip-audit`, `ruff`, `bandit`    | Same + WAF at load balancer        |
-| Testing             | `pytest`                         | `pytest` + `httpx`                 |
-| Packaging           | `pyproject.toml` + `uv`          | Docker image                       |
+| Layer               | CLI / Self-hosted                | API / Web mode (GCP)                          |
+|---------------------|----------------------------------|-----------------------------------------------|
+| Language            | Python 3.11+                     | Python 3.11+                                  |
+| CLI framework       | Typer                            | —                                             |
+| Web framework       | —                                | FastAPI + uvicorn                             |
+| Hosting             | Local                            | Cloud Run (min-instances=0) + Firebase Hosting |
+| DB                  | SQLite                           | Firestore (native vector search via `FindNearest`) |
+| Cache               | SQLite                           | Firestore (replaces Redis — no idle cost)     |
+| Image processing    | Pillow + scikit-learn (k-means)  | Same                                          |
+| Perceptual hash     | `imagehash`                      | Same                                          |
+| Embeddings          | `sentence-transformers` MiniLM   | Same model, Firestore vector field storage    |
+| Embedding storage   | JSON array in SQLite TEXT column | Firestore vector field (cosine via `FindNearest`) |
+| Secret storage      | `keyring` (OS keychain)          | Secret Manager (GCP)                          |
+| LLM adapters (CLI)  | Ollama, LM Studio, llamafile, Anthropic, OpenAI, Gemini, Groq, Mistral | — (CLI only) |
+| LLM adapters (web)  | —                                | Gemini (server, free tier) + BYOK pass-through (§6.4) |
+| Auth                | None (local)                     | Firebase Auth (GitHub OAuth only)             |
+| Security scanning   | `pip-audit`, `ruff`, `bandit`    | Same + Cloud Armor WAF                        |
+| Testing             | `pytest`                         | `pytest` + `httpx`                            |
+| Packaging           | `pyproject.toml` + `uv`          | Docker image via Cloud Build                  |
 
 ---
 

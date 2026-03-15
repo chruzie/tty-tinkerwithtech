@@ -117,7 +117,7 @@
         </h1>
         <p class="text-muted text-sm max-w-md mx-auto leading-relaxed">
           Describe a vibe or drop an image. Get a valid theme for Ghostty or iTerm2.
-          Runs locally with Ollama — or uses a cloud API of your choice.
+          Free by default via Gemini — or use your own API key.
         </p>
       </div>
 
@@ -130,40 +130,65 @@
           <label class="text-muted text-xs" for="provider-select">provider</label>
           <span class="text-green text-xs ml-auto flex items-center gap-1">
             <span class="w-1.5 h-1.5 rounded-full bg-green inline-block" aria-hidden="true"></span>
-            ollama detected
+            free tier active
           </span>
         </div>
         <div class="flex gap-2 flex-wrap" role="radiogroup" aria-label="Select AI provider">
-          <button onclick="selectProvider(this)" data-provider="ollama"
+          <button onclick="selectProvider(this)" data-provider="gemini-default" data-byok="false"
             class="provider-btn selected px-3 py-1.5 text-xs border border-green/40 bg-green/10 text-green rounded cursor-pointer transition-all duration-200 hover:border-green"
             role="radio" aria-checked="true">
-            Ollama (local)
+            Gemini (free · default)
           </button>
-          <button onclick="selectProvider(this)" data-provider="lmstudio"
+          <button onclick="selectProvider(this)" data-provider="gemini" data-byok="true" data-placeholder="AIza..."
             class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
             role="radio" aria-checked="false">
-            LM Studio
+            Gemini (BYOK)
           </button>
-          <button onclick="selectProvider(this)" data-provider="claude"
+          <button onclick="selectProvider(this)" data-provider="groq" data-byok="true" data-placeholder="gsk_..."
+            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
+            role="radio" aria-checked="false">
+            Groq
+          </button>
+          <button onclick="selectProvider(this)" data-provider="openai" data-byok="true" data-placeholder="sk-..."
+            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
+            role="radio" aria-checked="false">
+            OpenAI
+          </button>
+          <button onclick="selectProvider(this)" data-provider="claude" data-byok="true" data-placeholder="sk-ant-..."
             class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
             role="radio" aria-checked="false">
             Claude Haiku
           </button>
-          <button onclick="selectProvider(this)" data-provider="gemini"
+          <button onclick="selectProvider(this)" data-provider="mistral" data-byok="true" data-placeholder="paste Mistral key..."
             class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
             role="radio" aria-checked="false">
-            Gemini Flash
+            Mistral
           </button>
-          <button onclick="selectProvider(this)" data-provider="groq"
-            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
-            role="radio" aria-checked="false">
-            Groq (free)
-          </button>
-          <button onclick="selectProvider(this)" data-provider="openai"
-            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
-            role="radio" aria-checked="false">
-            GPT-4o-mini
-          </button>
+        </div>
+
+        <!-- BYOK key input — shown when a non-default provider is selected -->
+        <div id="byok-row" class="hidden mt-3">
+          <div class="border border-amber/30 bg-amber/5 rounded p-3 mb-2">
+            <p class="text-xs" style="color:#F59E0B">
+              <strong>⚠ Security notice:</strong>
+              Your key is stored in <strong>this browser only</strong> (localStorage).
+              It is never sent to or stored on tty-theme servers — it goes directly from your browser to the provider's API, or is passed ephemerally for CORS-restricted providers and immediately discarded.
+              <strong>tty-theme is not responsible for unauthorized use of your key.</strong>
+              Use a key with a spending limit. Clear saved keys on shared computers.
+            </p>
+          </div>
+          <div class="flex gap-2 items-center">
+            <input id="byok-key-input" type="password" autocomplete="off" spellcheck="false"
+              placeholder="paste API key..."
+              class="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text focus:outline-none focus:border-amber/60 placeholder:text-muted"
+              oninput="saveBYOKKey()"
+            />
+            <button onclick="clearBYOKKey()"
+              class="px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer hover:border-red hover:text-red transition-colors duration-200">
+              Clear
+            </button>
+          </div>
+          <p class="text-muted text-xs mt-1.5">Stored as <code class="text-purple">localStorage["tty-theme:byok:<span id="byok-provider-label">provider</span>"]</code> · cleared when you click Clear or use browser settings.</p>
         </div>
       </div>
 
@@ -395,7 +420,7 @@
         <span class="text-border" aria-hidden="true">/</span>
         <span class="text-text text-xs font-bold">cyberpunk-neon-rain</span>
         <span class="ml-auto flex items-center gap-2">
-          <span class="text-muted text-xs">via ollama · llama3:8b</span>
+          <span class="text-muted text-xs">via gemini-2.0-flash-lite · free tier</span>
           <span class="text-border text-xs" aria-hidden="true">·</span>
           <span class="text-green text-xs">$0.00</span>
           <span class="text-border text-xs" aria-hidden="true">·</span>
@@ -422,7 +447,7 @@
               <p class="mt-2" style="color:#64748b">searching cache...</p>
               <p style="color:#64748b">no exact match found</p>
               <p style="color:#64748b">similarity score: 0.71 (below threshold)</p>
-              <p style="color:#64748b">generating via ollama (llama3:8b)...</p>
+              <p style="color:#64748b">generating via gemini-2.0-flash-lite...</p>
               <p class="mt-2" style="color:#57cc99">✓ theme generated in 1.4s</p>
               <p style="color:#57cc99">✓ schema valid · contrast ratio: 7.2:1</p>
               <p style="color:#57cc99">✓ cached for future queries</p>
@@ -917,7 +942,7 @@ palette = 15=#ffffff</code></pre>
     <!-- ─── STATUS BAR ─── -->
     <footer class="mt-12 pt-4 border-t border-border/40 flex items-center justify-between text-xs text-muted">
       <span>ghostty-theme v0.1.0 · MIT</span>
-      <span>cache: <span class="text-green">247 themes</span> · provider: <span id="status-provider" class="text-green">ollama</span> · spend today: <span class="text-green">$0.00</span></span>
+      <span>cache: <span class="text-green">247 themes</span> · provider: <span id="status-provider" class="text-green">gemini-default</span> · spend today: <span class="text-green">$0.00</span></span>
       <a href="https://github.com/tty-tinkerwithtech/ghostty-theme" target="_blank" rel="noopener noreferrer" class="hover:text-text transition-colors duration-200 cursor-pointer">
         tty-tinkerwithtech/ghostty-theme ↗
       </a>
@@ -966,7 +991,43 @@ palette = 15=#ffffff</code></pre>
       btn.classList.remove('border-border','text-muted');
       btn.classList.add('border-green/40','bg-green/10','text-green');
       btn.setAttribute('aria-checked','true');
-      document.getElementById('status-provider').textContent = btn.dataset.provider;
+
+      const provider = btn.dataset.provider;
+      const needsBYOK = btn.dataset.byok === 'true';
+      const byokRow = document.getElementById('byok-row');
+      const byokInput = document.getElementById('byok-key-input');
+      const byokLabel = document.getElementById('byok-provider-label');
+
+      if (needsBYOK) {
+        byokRow.classList.remove('hidden');
+        byokInput.placeholder = btn.dataset.placeholder || 'paste API key...';
+        byokLabel.textContent = provider;
+        // Restore any previously saved key for this provider
+        const saved = localStorage.getItem(`tty-theme:byok:${provider}`);
+        byokInput.value = saved ? '••••••••' : '';
+        byokInput.dataset.currentProvider = provider;
+      } else {
+        byokRow.classList.add('hidden');
+        byokInput.value = '';
+      }
+
+      document.getElementById('status-provider').textContent = needsBYOK ? `${provider} (BYOK)` : provider;
+    }
+
+    function saveBYOKKey() {
+      const input = document.getElementById('byok-key-input');
+      const provider = input.dataset.currentProvider;
+      if (provider && input.value && input.value !== '••••••••') {
+        localStorage.setItem(`tty-theme:byok:${provider}`, input.value);
+      }
+    }
+
+    function clearBYOKKey() {
+      const input = document.getElementById('byok-key-input');
+      const provider = input.dataset.currentProvider;
+      if (provider) localStorage.removeItem(`tty-theme:byok:${provider}`);
+      input.value = '';
+      showToast('key cleared from localStorage');
     }
 
     // ── Prompt helpers ────────────────────────────────────────
