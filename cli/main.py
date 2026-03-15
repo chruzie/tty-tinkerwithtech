@@ -119,11 +119,9 @@ def config_status() -> None:
     repo.init_db()
 
     typer.echo("Provider availability:")
-    from providers.llamafile import LlamafileProvider
-    from providers.lmstudio import LMStudioProvider
-    from providers.ollama import OllamaProvider
+    from providers.registry import _build_chain
 
-    for p in [OllamaProvider(), LMStudioProvider(), LlamafileProvider()]:
+    for p in _build_chain():
         status = "✓ running" if p.health_check() else "✗ offline"
         typer.echo(f"  {p.name:12} {status}")
 

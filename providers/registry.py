@@ -1,73 +1,98 @@
-"""Provider registry — resolves the first available provider (cost-ordered)."""
+"""Provider registry — resolves providers with 429-aware auto-fallback.
+
+Resolution order (cost-ordered):
+  1. Local: Ollama → LM Studio → llamafile  (health-checked, no key needed)
+  2. Free cloud: Groq → Gemini              (tried in order; 429 → next)
+  3. Paid: OpenAI → Mistral                 (only if key configured)
+
+On HTTP 429 (throttled), the registry transparently tries the next provider.
+All other errors propagate immediately.
+"""
 
 from __future__ import annotations
 
-from providers.base import BaseProvider
-from providers.llamafile import LlamafileProvider
-from providers.lmstudio import LMStudioProvider
-from providers.ollama import OllamaProvider
+import httpx
+
+from providers.openai_compat import CATALOGUE, OpenAICompatProvider
 from security.keystore import get_key
 
 
-def _cloud_providers() -> list[BaseProvider]:
-    """Build cloud provider list from stored API keys (only those with keys set)."""
-    providers: list[BaseProvider] = []
+def _build_chain(preferred: str | None = None) -> list[OpenAICompatProvider]:
+    """Build the ordered provider list, injecting stored API keys."""
+    providers: list[OpenAICompatProvider] = []
 
-    # Import cloud providers lazily so missing packages don't break local-only usage
-    from providers.anthropic import AnthropicProvider
-    from providers.gemini import GeminiProvider
-    from providers.groq import GroqProvider
-    from providers.mistral import MistralProvider
-    from providers.openai import OpenAIProvider
+    for name, base_url, model, key_name, cost, is_local in CATALOGUE:
+        api_key = get_key(key_name) if key_name else None
+        p = OpenAICompatProvider(
+            name=name,
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            cost_per_1k=cost,
+            is_local=is_local,
+        )
+        providers.append(p)
 
-    for cls, key_name in [
-        (GeminiProvider, "gemini"),
-        (GroqProvider, "groq"),
-        (AnthropicProvider, "anthropic"),
-        (OpenAIProvider, "openai"),
-        (MistralProvider, "mistral"),
-    ]:
-        key = get_key(key_name)
-        if key:
-            providers.append(cls(api_key=key))  # type: ignore[call-arg]
+    # If a preferred provider is requested, move it to the front
+    if preferred:
+        providers.sort(key=lambda p: (0 if p.name == preferred else 1))
 
     return providers
 
 
-def resolve_provider(preferred: str | None = None) -> BaseProvider:
-    """Return the first healthy provider in the cost-ordered chain.
-
-    Order: Ollama → LM Studio → llamafile → Gemini → Groq → Claude Haiku → GPT-4o-mini → Mistral
+def resolve_provider(preferred: str | None = None) -> OpenAICompatProvider:
+    """Return first healthy provider; skip local providers that aren't running.
 
     Raises:
-        RuntimeError: if no provider is available.
+        RuntimeError: if no provider is healthy/configured.
     """
-    local: list[BaseProvider] = [
-        OllamaProvider(),
-        LMStudioProvider(),
-        LlamafileProvider(),
-    ]
+    chain = _build_chain(preferred)
+    available = [p for p in chain if p.health_check()]
 
-    # If a preferred provider is specified, try it first
-    if preferred:
-        all_providers = local + _cloud_providers()
-        for p in all_providers:
-            if p.name == preferred:
-                if p.health_check():
-                    return p
-                raise RuntimeError(f"Preferred provider {preferred!r} is not available")
+    if not available:
+        raise RuntimeError(
+            "No LLM provider available.\n"
+            "• Local: start Ollama (`ollama serve`) or LM Studio\n"
+            "• Free cloud: run `tty-theme config setup` to add a Groq or Gemini API key"
+        )
 
-    # Check local providers first (free)
-    for p in local:
-        if p.health_check():
-            return p
+    return available[0]
 
-    # Fall through to cloud
-    for p in _cloud_providers():
-        if p.health_check():
-            return p
+
+def generate_with_fallback(
+    prompt: dict[str, str],
+    preferred: str | None = None,
+) -> tuple[str, str]:
+    """Generate a theme string with automatic 429 fallback across providers.
+
+    Returns:
+        (theme_str, provider_name) — the raw LLM output and which provider was used.
+
+    Raises:
+        RuntimeError: if all available providers are exhausted (throttled or failed).
+    """
+    chain = _build_chain(preferred)
+    available = [p for p in chain if p.health_check()]
+
+    if not available:
+        raise RuntimeError(
+            "No LLM provider available. Run `tty-theme config setup` to configure one."
+        )
+
+    errors: list[str] = []
+    for provider in available:
+        try:
+            result = provider.generate(prompt)
+            return result, provider.name
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429:  # noqa: PLR2004
+                errors.append(f"{provider.name}: throttled (429)")
+                continue  # try next provider
+            raise  # non-429 HTTP error: propagate immediately
+        except httpx.RequestError as exc:
+            errors.append(f"{provider.name}: connection error ({exc})")
+            continue
 
     raise RuntimeError(
-        "No LLM provider available. Run Ollama locally or configure a cloud API key with "
-        "'tty-theme config setup'."
+        "All providers exhausted:\n" + "\n".join(f"  • {e}" for e in errors)
     )

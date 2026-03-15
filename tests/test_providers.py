@@ -1,4 +1,4 @@
-"""Tests for provider adapters and registry."""
+"""Tests for the simplified OpenAI-compatible provider layer."""
 
 from __future__ import annotations
 
@@ -7,69 +7,83 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-class TestLocalProviders:
-    def test_ollama_health_check_true(self):
-        from providers.ollama import OllamaProvider
-
-        with patch("httpx.get") as mock_get:
-            mock_get.return_value = MagicMock(status_code=200)
-            p = OllamaProvider()
+class TestOpenAICompatProvider:
+    def test_local_health_true(self):
+        from providers.openai_compat import OpenAICompatProvider
+        with patch("httpx.get") as m:
+            m.return_value = MagicMock(status_code=200)
+            p = OpenAICompatProvider("ollama", "http://localhost:11434/v1", "llama3", is_local=True)
             assert p.health_check() is True
 
-    def test_ollama_health_check_false_on_error(self):
-        from providers.ollama import OllamaProvider
-
+    def test_local_health_false_on_error(self):
+        from providers.openai_compat import OpenAICompatProvider
         with patch("httpx.get", side_effect=Exception("refused")):
-            p = OllamaProvider()
+            p = OpenAICompatProvider("ollama", "http://localhost:11434/v1", "llama3", is_local=True)
             assert p.health_check() is False
 
-    def test_ollama_generate(self):
-        from providers.ollama import OllamaProvider
+    def test_cloud_health_true_with_key(self):
+        from providers.openai_compat import OpenAICompatProvider
+        p = OpenAICompatProvider("groq", "https://api.groq.com/openai/v1", "llama3", api_key="key")
+        assert p.health_check() is True
 
+    def test_cloud_health_false_without_key(self):
+        from providers.openai_compat import OpenAICompatProvider
+        p = OpenAICompatProvider("groq", "https://api.groq.com/openai/v1", "llama3")
+        assert p.health_check() is False
+
+    def test_generate_returns_content(self):
+        from providers.openai_compat import OpenAICompatProvider
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "choices": [{"message": {"content": "palette = 0 = #000000"}}]
-        }
+        mock_resp.json.return_value = {"choices": [{"message": {"content": "palette = 0 = #000000"}}]}
         mock_resp.raise_for_status = MagicMock()
-
         with patch("httpx.post", return_value=mock_resp):
-            p = OllamaProvider()
-            result = p.generate({"system": "sys", "user": "usr"})
-            assert result == "palette = 0 = #000000"
-
-    def test_lmstudio_health_false_on_error(self):
-        from providers.lmstudio import LMStudioProvider
-
-        with patch("httpx.get", side_effect=ConnectionError):
-            p = LMStudioProvider()
-            assert p.health_check() is False
-
-    def test_llamafile_health_false_on_error(self):
-        from providers.llamafile import LlamafileProvider
-
-        with patch("httpx.get", side_effect=ConnectionError):
-            p = LlamafileProvider()
-            assert p.health_check() is False
+            p = OpenAICompatProvider("groq", "https://api.groq.com/openai/v1", "llama3", api_key="k")
+            assert p.generate({"system": "s", "user": "u"}) == "palette = 0 = #000000"
 
 
 class TestRegistry:
-    def test_resolve_prefers_local(self):
+    def test_resolve_prefers_local_running(self):
         from providers.registry import resolve_provider
-
         with (
-            patch("providers.ollama.OllamaProvider.health_check", return_value=True),
+            patch("httpx.get", return_value=MagicMock(status_code=200)),
+            patch("security.keystore.get_key", return_value=None),
         ):
             p = resolve_provider()
             assert p.name == "ollama"
 
     def test_resolve_raises_when_nothing_available(self):
         from providers.registry import resolve_provider
-
         with (
-            patch("providers.ollama.OllamaProvider.health_check", return_value=False),
-            patch("providers.lmstudio.LMStudioProvider.health_check", return_value=False),
-            patch("providers.llamafile.LlamafileProvider.health_check", return_value=False),
+            patch("httpx.get", side_effect=Exception("refused")),
             patch("security.keystore.get_key", return_value=None),
         ):
             with pytest.raises(RuntimeError, match="No LLM provider"):
                 resolve_provider()
+
+    def test_fallback_on_429(self):
+        import httpx
+
+        from providers.registry import generate_with_fallback
+
+        call_count = 0
+
+        def fake_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                r = MagicMock()
+                r.status_code = 429
+                raise httpx.HTTPStatusError("429", request=MagicMock(), response=r)
+            m = MagicMock()
+            m.raise_for_status = MagicMock()
+            m.json.return_value = {"choices": [{"message": {"content": "theme output"}}]}
+            return m
+
+        with (
+            patch("httpx.get", return_value=MagicMock(status_code=200)),
+            patch("httpx.post", side_effect=fake_post),
+            patch("security.keystore.get_key", return_value="fake-key"),
+        ):
+            result, provider_name = generate_with_fallback({"system": "s", "user": "u"})
+            assert result == "theme output"
+            assert call_count == 2

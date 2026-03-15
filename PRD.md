@@ -1,7 +1,7 @@
 # Product Requirements Document
 ## tty-theme: AI Terminal Theme Generator — Ralph Implementation PRD
 
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Draft
 **Author:** chruzcruz
 **Date:** 2026-03-15
@@ -21,7 +21,7 @@ This document doubles as an executable implementation guide. Each phase is self-
 |-------|------|-------------|-------------|--------|
 | 0 | Foundation | Repo scaffold, pyproject.toml, CI/CD pipeline | 1 day | ✓ done |
 | 1 | Core pipeline | CLI entrypoint, prompt + image modes, Ghostty + iTerm2 serializers, SQLite cache | 2 days | ← **next** |
-| 2 | Provider system | Ollama, LM Studio, Gemini free tier, Claude Haiku adapters; keychain secret mgmt | 1 day | |
+| 2 | Provider system | **Simplified:** one `OpenAICompatProvider` class; local (Ollama/LM Studio/llamafile) + free cloud (Groq → Gemini) + 429-auto-fallback | 0.5 day | |
 | 3 | Similarity search | MiniLM embeddings, cosine similarity, tiered cache (exact → similarity → LLM) | 1 day | |
 | 4 | Local emulator env | Docker Compose + Firebase Emulator Suite (Firestore, Auth, Hosting, Prometheus) | 0.5 day | |
 | 5 | Web API (local) | FastAPI app wired to local Firestore emulator, rate limiting, audit log | 1 day | |
