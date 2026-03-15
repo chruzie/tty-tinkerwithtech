@@ -103,3 +103,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `__del__` with bare `except Exception: pass` triggers ruff S110; suppress with `# noqa: BLE001, S110` on the except line
   - `timeout=60.0` on the Client constructor becomes the default; override per-call with `timeout=2.0` for health checks
 ---
+
+## 2026-03-15 - US-011
+- Implemented: Added `_get_model()` call in the lifespan startup block; result stored on `app.state.embedding_model`; broad except with warning for graceful degradation when sentence-transformers not installed
+- Files changed: api/main.py
+- **Learnings for future iterations:**
+  - `_get_model()` is a module-level function — call it via `cache.embeddings._get_model()` (leading underscore is fine for internal access)
+  - Broad `except Exception` in lifespan is intentional — startup should not crash the API if an optional dependency is missing; use `# noqa: BLE001` to suppress ruff
+  - `app.state.embedding_model = None` ensures downstream code can check `if app.state.embedding_model` before using it
+---
