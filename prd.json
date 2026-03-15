@@ -48,7 +48,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "SEC-H6 from audit. cli/main.py lines 36-38."
     },
     {

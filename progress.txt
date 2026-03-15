@@ -30,3 +30,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `urlunparse((scheme, netloc, path, params, query, fragment))` is cleaner than `parsed._replace(netloc=...).geturl()` for URL reconstruction
   - The test for IP substitution patches `security.ssrf_guard.httpx` (the module object) and asserts on `mock_httpx.get.call_args`
 ---
+
+## 2026-03-15 - US-003
+- Implemented: Added `re` import and regex validation in `_install_theme()` after the replace/lower step; raises ValueError for any name not matching `^[a-z0-9][a-z0-9_-]*$`
+- Files changed: cli/main.py, tests/test_cli_install.py (new)
+- **Learnings for future iterations:**
+  - The safe_name transform (replace spaces with hyphens, lower) must happen before validation so "My Theme" → "my-theme" passes
+  - `patch.object(module, attr, value)` is the clean way to redirect module-level Path constants in tests
+  - Ruff I001 fires if stdlib imports and third-party imports are not separated by a blank line — `ruff check --fix` corrects automatically
+---
