@@ -1,962 +1,345 @@
 {
   "project": "tty-theme",
-  "branchName": "ralph/tty-theme-local-first",
-  "description": "tty-theme \u2014 AI terminal theme generator. Full implementation with local-first GCP emulation: Firebase Emulator Suite (Firestore, Auth, Hosting) + Docker Compose replaces all gcloud/firebase deploy commands. No real GCP infra touched during development. Terraform IaC for all GCP resources (validate/plan locally, apply for production).",
+  "branchName": "ralph/audit-remediation",
+  "description": "tty-theme — Audit remediation. Fixes for P0/P1 findings from the 2026-03-15 multi-agent security, performance, bug, and UX review. Stories ordered by dependency: security foundations first, then performance, then bugs, then UX.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Repo scaffold and pyproject.toml",
-      "description": "As a developer, I need a clean project scaffold with all dependencies declared so I can start building immediately.",
+      "title": "Fix SSRF guard: add missing blocklist ranges and IPv6 mapped addresses",
+      "description": "As a security engineer, I need the SSRF guard to block 0.0.0.0/8, 100.64.0.0/10, and IPv4-mapped IPv6 addresses so attackers cannot bypass it with edge-case addresses.",
       "acceptanceCriteria": [
-        "pyproject.toml exists with project name 'tty-theme', Python >=3.11, and all Phase 0-3 deps: typer, pillow, scikit-learn, imagehash, sentence-transformers, keyring, httpx",
-        "uv.lock is generated and committed",
-        "Directory structure exists: cli/, modes/, generator/serializers/, image/, cache/, providers/, security/, themes/, schema/, tests/",
-        "Each directory has an __init__.py",
-        "pyproject.toml [tool.ruff] section enables S rules (bandit), E, F, I",
-        "ruff check passes"
+        "Add 0.0.0.0/8 and 100.64.0.0/10 to _BLOCKED_NETWORKS in security/ssrf_guard.py",
+        "For each resolved IP, check ipaddress.ip_address(ip).ipv4_mapped and re-validate the embedded IPv4 address if present",
+        "check_url('https://0.0.0.0/') raises ValueError",
+        "check_url('https://[::ffff:127.0.0.1]/') raises ValueError",
+        "check_url('https://100.64.1.1/') raises ValueError",
+        "Existing tests still pass",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 1,
       "passes": false,
-      "notes": ""
+      "notes": "SEC-C2 from audit. See security/ssrf_guard.py lines 9-18."
     },
     {
       "id": "US-002",
-      "title": "SQLite schema \u2014 themes, cost_log, audit_log tables",
-      "description": "As a developer, I need the SQLite schema initialized so the cache and cost tracking can persist data.",
+      "title": "Fix SSRF guard: resolve DNS once and pass resolved IP to httpx (DNS rebinding fix)",
+      "description": "As a security engineer, I need DNS resolution to happen once and the resolved IP to be reused for the HTTP fetch so a DNS rebinding attack cannot bypass the SSRF guard between the check and the request.",
       "acceptanceCriteria": [
-        "cache/db.py implements a ThemeRepository class with init_db(), save_theme(), get_by_hash(), list_themes() methods",
-        "init_db() creates themes table with columns: id, query_hash, query_raw, input_type, name, theme_data, embedding, source, provider, cost_usd, created_at",
-        "init_db() creates cost_log table with columns: id, date, provider, calls, cost_usd",
-        "init_db() creates audit_log table with columns: id, ip_hash, query_hash, input_type, provider, tier_used, cost_usd, status, created_at",
-        "Index on themes.query_hash is created",
-        "DB file defaults to ~/.local/share/tty-theme/cache.db (created if not exists)",
-        "Tests pass: init_db idempotent, save and retrieve a theme by hash",
-        "ruff check passes"
+        "Add a function safe_fetch(url, **kwargs) in security/ssrf_guard.py that: (1) calls check_url(url), (2) resolves the hostname via socket.getaddrinfo, (3) validates the resolved IP, (4) performs the httpx.get with the resolved IP via a custom transport or by substituting the IP in the URL and passing the original host as the Host header",
+        "image/loader.py imports and uses safe_fetch instead of httpx.get for remote image URLs",
+        "A mock test verifies safe_fetch rejects a URL whose DNS resolves to 127.0.0.1",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 2,
       "passes": false,
-      "notes": ""
+      "notes": "SEC-C1 from audit. DNS TOCTOU between ssrf_guard.py check and loader.py httpx.get."
     },
     {
       "id": "US-003",
-      "title": "Security module stubs",
-      "description": "As a developer, I need stub implementations of the security modules so the import graph is complete before building the real logic.",
+      "title": "Fix path traversal in --install theme name sanitization",
+      "description": "As a user, I need the --install flag to safely handle any theme name so that a malicious name like ../../.bashrc cannot write outside the themes directory.",
       "acceptanceCriteria": [
-        "security/input_sanitizer.py: sanitize_prompt(text: str) -> str \u2014 stub returns text unchanged, raises ValueError if len > 200",
-        "security/ssrf_guard.py: check_url(url: str) -> None \u2014 stub raises ValueError for non-https URLs",
-        "security/keystore.py: get_key(provider: str) -> str | None and set_key(provider: str, key: str) -> None stubs",
-        "security/rate_limiter.py: RateLimiter class stub with check() -> bool always returning True",
-        "All files importable with no runtime errors",
-        "ruff check passes"
+        "In cli/main.py _install_theme(), after building safe_name, validate it with re.match(r'^[a-z0-9][a-z0-9_-]*$', safe_name) and raise ValueError if it does not match",
+        "Names containing '/' or '..' or starting with '-' are rejected with a clear error message",
+        "tty-theme generate --prompt x --install --name '../../evil' prints an error and exits non-zero",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 3,
       "passes": false,
-      "notes": ""
+      "notes": "SEC-H6 from audit. cli/main.py lines 36-38."
     },
     {
       "id": "US-004",
-      "title": "Ghostty ThemeSerializer base class and Ghostty serializer",
-      "description": "As a developer, I need the ThemeSerializer abstract base class and the Ghostty key=value serializer so themes can be output in Ghostty format.",
+      "title": "Restrict /metrics endpoint to internal access only",
+      "description": "As a platform engineer, I need the /metrics endpoint to be inaccessible to public internet clients so that internal observability data is not exposed.",
       "acceptanceCriteria": [
-        "generator/serializers/base.py: abstract ThemeSerializer with serialize(palette: dict) -> str and file_extension() -> str abstract methods",
-        "generator/serializers/ghostty.py: GhosttySerializer implements ThemeSerializer",
-        "GhosttySerializer.serialize() outputs all 16 palette entries (palette = 0..15) plus background, foreground, cursor-color, selection-background, selection-foreground",
-        "Output format: one key=value per line, hex values as #RRGGBB",
-        "serialize() raises ValueError if any of the 21 required keys is missing or any hex value is invalid",
-        "Tests pass: round-trip a full 21-key palette through GhosttySerializer",
-        "ruff check passes"
+        "Add a MetricsAuthMiddleware or a dependency in api/main.py that checks for a METRICS_TOKEN env var",
+        "If METRICS_TOKEN is set, /metrics requires Authorization: Bearer <token> header and returns 403 if missing or wrong",
+        "If METRICS_TOKEN is not set (local dev), /metrics is accessible without auth",
+        ".env.example documents METRICS_TOKEN= as an optional field",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 4,
       "passes": false,
-      "notes": ""
+      "notes": "SEC-H4 from audit. api/main.py lines 74-77."
     },
     {
       "id": "US-005",
-      "title": "iTerm2 serializer",
-      "description": "As a developer, I need the iTerm2 XML plist serializer so themes can be exported as .itermcolors files.",
+      "title": "Fix X-Forwarded-For spoofing in rate limiter",
+      "description": "As a platform engineer, I need the rate limiter to only trust X-Forwarded-For when behind a known proxy so that clients cannot bypass rate limits by spoofing the header.",
       "acceptanceCriteria": [
-        "generator/serializers/iterm2.py: ITerm2Serializer implements ThemeSerializer",
-        "file_extension() returns '.itermcolors'",
-        "serialize() outputs valid XML plist with Ansi 0-15 Color, Background Color, Foreground Color, Bold Color, Cursor Color, Cursor Text Color, Selection Color, Selected Text Color, Link Color",
-        "Each color dict has Alpha Component=1, Color Space=sRGB, Red/Green/Blue Component as float (hex / 255.0, 6 decimal places)",
-        "Bold Color maps to palette 15 (bright white); Link Color maps to palette 4 (blue)",
-        "Tests pass: round-trip #1a1a2e through serializer produces Red=0.101961, Green=0.101961, Blue=0.180392",
-        "ruff check passes"
+        "In api/middleware.py _ip_hash(), add a TRUSTED_PROXY_COUNT env var (default 0, integer)",
+        "If TRUSTED_PROXY_COUNT == 0, use request.client.host directly, ignoring X-Forwarded-For",
+        "If TRUSTED_PROXY_COUNT > 0, parse the Nth-from-right value from X-Forwarded-For (the trusted hop)",
+        ".env.example documents TRUSTED_PROXY_COUNT=1 for Cloud Run behind Google Front End",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 5,
       "passes": false,
-      "notes": ""
+      "notes": "SEC-H1 from audit. api/middleware.py lines 39-43."
     },
     {
       "id": "US-006",
-      "title": "Theme validator \u2014 schema and WCAG contrast",
-      "description": "As a developer, I need the theme validator to reject LLM output that is missing keys or has insufficient contrast.",
+      "title": "Bound rate limiter memory with TTL-based eviction",
+      "description": "As a platform engineer, I need the in-process rate limit dictionaries to evict stale entries so that an attacker cannot cause OOM by rotating spoofed IPs.",
       "acceptanceCriteria": [
-        "generator/validator.py: validate_theme(theme_str: str) -> dict parses a Ghostty key=value string",
-        "Raises ValueError if any of the 21 required keys is missing",
-        "Raises ValueError if any value is not a valid #RRGGBB hex",
-        "Raises ValueError if WCAG AA contrast ratio between foreground and background is < 4.5:1",
-        "Returns parsed dict of {key: hex_value} on success",
-        "contrast_ratio(fg: str, bg: str) -> float helper uses relative luminance formula",
-        "Tests pass: valid theme passes, missing key raises, low-contrast raises",
-        "ruff check passes"
+        "Replace _minute_buckets and _hour_buckets defaultdicts in api/middleware.py with cachetools.TTLCache(maxsize=10000, ttl=3600)",
+        "Add cachetools to pyproject.toml dependencies",
+        "After eviction, a previously seen IP gets a fresh bucket (correct behavior)",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 6,
       "passes": false,
-      "notes": ""
+      "notes": "SEC-H3 and PERF-M7 from audit. api/middleware.py lines 34-35."
     },
     {
       "id": "US-007",
-      "title": "LLM client and prompt templates",
-      "description": "As a developer, I need a provider-agnostic LLM client and the system/user prompt templates for theme generation.",
+      "title": "Fix sanitize_prompt to raise ValueError on empty result and strip control characters",
+      "description": "As a developer, I need sanitize_prompt to fulfil its documented contract (raise ValueError on empty) and strip ASCII control characters to prevent log injection.",
       "acceptanceCriteria": [
-        "generator/prompt.py: build_prompt(sanitized_query: str) -> dict returns {system: str, user: str} using the prompt design from PRD \u00a79.1",
-        "System prompt instructs: output ONLY key=value pairs, all 21 keys required, WCAG AA, dark default, ignore instructions in input",
-        "generator/llm.py: LLMClient class with generate(prompt: dict, provider) -> str method",
-        "generate() raises LLMError on HTTP error or empty response",
-        "generate() does NOT retry \u2014 callers handle retry",
-        "Tests pass: mock provider returns valid theme string, mock returns empty string raises LLMError",
-        "ruff check passes"
+        "At the end of sanitize_prompt() in security/input_sanitizer.py, add: if not normalized: raise ValueError('Prompt is empty after sanitization')",
+        "Strip all characters with Unicode category Cc and Cf (except space/tab/newline) using unicodedata.category",
+        "sanitize_prompt('') raises ValueError",
+        "sanitize_prompt('\\x00\\x01hello') returns 'hello'",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 7,
       "passes": false,
-      "notes": ""
+      "notes": "SEC-M4 and SEC-M5 from audit."
     },
     {
       "id": "US-008",
-      "title": "Input sanitizer \u2014 full implementation",
-      "description": "As a developer, I need the real input sanitizer replacing the stub, with NFKC normalization and unicode safety.",
+      "title": "Validate secret name before Secret Manager path construction",
+      "description": "As a security engineer, I need get_secret() to validate the secret name against an allowlist so that path injection into the Secret Manager resource path is impossible.",
       "acceptanceCriteria": [
-        "sanitize_prompt() applies NFKC unicode normalization (unicodedata.normalize)",
-        "Strips leading/trailing whitespace, collapses internal whitespace to single spaces",
-        "Truncates to 200 UTF-8 characters (not code points) and issues a warning if truncated",
-        "Returns cleaned ASCII-safe string",
-        "Tests pass: emoji in input normalized, 250-char input truncated to 200, homoglyph normalized",
-        "ruff check passes"
+        "In security/secrets.py get_secret(), before constructing the resource path, validate name matches r'^[A-Z_][A-Z0-9_]*$'",
+        "Raise ValueError('Invalid secret name: {name}') if it does not match",
+        "get_secret('../../bad') raises ValueError",
+        "get_secret('GEMINI_API_KEY') works normally",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 8,
       "passes": false,
-      "notes": ""
+      "notes": "SEC-M6 from audit. security/secrets.py line 47."
     },
     {
       "id": "US-009",
-      "title": "SQLite cache repository \u2014 embedding storage and lookup",
-      "description": "As a developer, I need the cache repository to store and retrieve embeddings as JSON arrays for the similarity search tier.",
+      "title": "Fix sync blocking in async FastAPI generate endpoint",
+      "description": "As a platform engineer, I need the /v1/generate endpoint to not block the asyncio event loop so that the API can handle multiple concurrent requests.",
       "acceptanceCriteria": [
-        "cache/db.py: save_theme() accepts optional embedding: list[float] parameter",
-        "Embedding stored as json.dumps(vector.tolist()) in the TEXT embedding column \u2014 use JSON serialization only, never binary object serialization",
-        "get_all_embeddings() -> list[tuple[int, list[float]]] returns (id, vector) for all rows with non-null embeddings",
-        "get_by_id(theme_id: int) -> dict returns full theme row",
-        "Tests pass: save with embedding, retrieve embedding, confirm JSON round-trip preserves values",
-        "ruff check passes"
+        "Change async def generate(...) to def generate(...) in api/main.py so FastAPI delegates it to a thread pool",
+        "Remove any await calls that are no longer needed after this change",
+        "The endpoint still returns the correct GenerateResponse",
+        "Typecheck passes"
       ],
       "priority": 9,
       "passes": false,
-      "notes": ""
+      "notes": "PERF-H1 from audit. api/main.py lines 114-158. Simplest fix: sync def, FastAPI auto-threads."
     },
     {
       "id": "US-010",
-      "title": "Prompt mode pipeline \u2014 full A1-A7 implementation",
-      "description": "As a developer, I need the complete prompt mode pipeline wiring sanitize \u2192 cache lookup \u2192 LLM generate \u2192 validate \u2192 cache.",
+      "title": "Add HTTP connection reuse to OpenAICompatProvider",
+      "description": "As a developer, I need each OpenAICompatProvider instance to reuse an httpx.Client so that TCP+TLS connection overhead is not paid on every LLM call.",
       "acceptanceCriteria": [
-        "modes/prompt_mode.py: generate_from_prompt(query: str, provider, target: str) -> str runs the full pipeline",
-        "Step A1-A2: sanitize and normalize query",
-        "Step A3: SHA256 exact cache lookup \u2014 returns cached theme_data string on hit",
-        "Step A4: placeholder (returns None \u2014 similarity search added in US-016/017)",
-        "Step A5: LLM generation with up to 3 retries on validation failure",
-        "Step A6: validate_theme() called; retry on failure",
-        "Step A7: save to cache with query_hash, input_type='prompt', provider, cost_usd",
-        "Returns serialized theme string in the requested target format",
-        "Tests pass: cache hit skips LLM, validation failure retries, max retries raises",
-        "ruff check passes"
+        "In providers/openai_compat.py OpenAICompatProvider.__init__(), create self._client = httpx.Client(timeout=60.0) and store it",
+        "Replace the standalone httpx.post() call in generate() with self._client.post()",
+        "Replace the standalone httpx.get() call in health_check() with self._client.get() with timeout=2.0",
+        "Add __del__ or a close() method that calls self._client.close()",
+        "Existing provider tests still pass",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 10,
       "passes": false,
-      "notes": ""
+      "notes": "PERF-H4 from audit. providers/openai_compat.py lines 57, 65-80."
     },
     {
       "id": "US-011",
-      "title": "Typer CLI entry point \u2014 generate and config commands",
-      "description": "As a user, I want a working CLI so I can run tty-theme generate from the terminal.",
+      "title": "Pre-load MiniLM embedding model at FastAPI startup",
+      "description": "As a platform engineer, I need the sentence-transformers model to be loaded during app startup rather than on the first request so that cold start latency does not affect real users.",
       "acceptanceCriteria": [
-        "cli/main.py: Typer app with 'generate' command accepting --prompt TEXT, --image PATH, --target TEXT (default: ghostty), --install flag, --name TEXT",
-        "'config' subapp with 'status' command printing provider, cache stats, spend to date",
-        "'seed' command that loads themes/index.json and inserts into SQLite cache",
-        "generate --prompt runs prompt_mode.generate_from_prompt() and prints output to stdout",
-        "Running 'tty-theme --help' shows all commands without error",
-        "pyproject.toml scripts entry: tty-theme = 'cli.main:app'",
-        "ruff check passes"
+        "In api/main.py lifespan startup block, call cache.embeddings._get_model() (or equivalent) to force model load",
+        "The model is stored on app.state so it is reused across requests",
+        "If sentence-transformers is not installed, startup logs a warning but does not fail",
+        "Typecheck passes"
       ],
       "priority": 11,
       "passes": false,
-      "notes": ""
+      "notes": "PERF-H3 from audit. cache/embeddings.py lines 11-17."
     },
     {
       "id": "US-012",
-      "title": "Local provider adapters \u2014 Ollama, LM Studio, llamafile",
-      "description": "As a developer, I need the three local model server adapters so users with Ollama/LM Studio/llamafile pay $0.",
+      "title": "Cache provider health check results with 30-second TTL",
+      "description": "As a developer, I need provider health checks to be cached for 30 seconds so that repeated calls do not add 6 seconds of serial blocking when local providers are offline.",
       "acceptanceCriteria": [
-        "providers/ollama.py: OllamaProvider with generate() calling http://localhost:11434/v1/chat/completions",
-        "providers/lmstudio.py: LMStudioProvider calling http://localhost:1234/v1/chat/completions",
-        "providers/llamafile.py: LlamafileProvider calling http://localhost:8080/v1/chat/completions",
-        "All three use the same OpenAI-compatible request format",
-        "Each has a health_check() -> bool method that returns False (not raises) if server is not running",
-        "Base URL validated: must be http://localhost or http://127.0.0.1 \u2014 reject other hosts unless --allow-remote-llm flag",
-        "Tests pass: mock HTTP 200 returns content, mock connection error returns health_check False",
-        "ruff check passes"
+        "In providers/openai_compat.py, add a _health_cache: dict[str, tuple[bool, float]] at module level",
+        "health_check() returns cached result if last check was within 30 seconds (use time.monotonic())",
+        "Otherwise performs the actual check and caches the result",
+        "A test verifies the second health_check() call within 30s does not call httpx.get again",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 12,
       "passes": false,
-      "notes": ""
+      "notes": "PERF-M2 from audit. providers/registry.py lines 49-50, openai_compat.py line 57."
     },
     {
       "id": "US-013",
-      "title": "Cloud provider adapters \u2014 Anthropic, OpenAI, Gemini, Groq, Mistral",
-      "description": "As a developer, I need the five cloud LLM provider adapters so users can generate themes without a local model.",
+      "title": "Fix cache hits returning wrong serialization format (BUG-01)",
+      "description": "As a user, I need --target iterm2 to always return iTerm2 format even when served from cache so that I get the format I asked for regardless of cache tier.",
       "acceptanceCriteria": [
-        "providers/anthropic.py, openai.py, gemini.py, groq.py, mistral.py each implement generate(prompt: dict, api_key: str) -> str",
-        "Each adapter uses the correct API endpoint and request format for its provider",
-        "Cheapest model hardcoded as default: claude-haiku-3-5, gpt-4o-mini, gemini-2.0-flash-lite, llama3-8b-8192, mistral-small",
-        "HTTP 429 raises RateLimitError (not retried in adapter \u2014 caller handles)",
-        "API key never logged \u2014 log statements scrub known key patterns before output",
-        "Tests pass: mock 200 returns content, mock 429 raises RateLimitError, missing key raises ConfigError",
-        "ruff check passes"
+        "In modes/prompt_mode.py, on the tier-1 cache hit path (line ~61), re-serialize cached['theme_data'] through the serializer: parse with validator, serialize with serializer.serialize()",
+        "On the tier-2 similarity hit path (line ~73), apply the same re-serialization",
+        "A test verifies: seed cache with Ghostty format, call generate_from_prompt with target='iterm2', assert output contains XML plist markers",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 13,
       "passes": false,
-      "notes": ""
+      "notes": "BUG-01 from audit. Critical. modes/prompt_mode.py lines 61 and 73."
     },
     {
       "id": "US-014",
-      "title": "Provider registry and auto-resolution chain",
-      "description": "As a developer, I need the provider registry to auto-detect the best available provider in cost order.",
+      "title": "Fix wrong prompt builder used for image refinement (BUG-06)",
+      "description": "As a user, I need image refinement to use the correct LLM system prompt so that the palette-specific refine prompt is used instead of the text-inspiration prompt.",
       "acceptanceCriteria": [
-        "providers/registry.py: resolve_provider(config: dict) -> Provider returns first available provider",
-        "Resolution order: --provider flag \u2192 GHOSTTY_PROVIDER env var \u2192 config file \u2192 auto-detect Ollama \u2192 LM Studio \u2192 llamafile \u2192 Gemini \u2192 Groq \u2192 Haiku \u2192 GPT-4o-mini \u2192 Mistral",
-        "Auto-detect calls health_check() on each local provider; first that returns True wins",
-        "Cloud provider selected only if a key is available via keychain or env var",
-        "Raises ConfigError with clear message if no provider is available",
-        "Tests pass: Ollama healthy \u2192 returns OllamaProvider, no providers available \u2192 raises ConfigError",
-        "ruff check passes"
+        "In modes/image_mode.py line ~73, replace build_prompt(f'Refine this extracted palette:\\n{palette_str}') with build_refine_prompt(colors, user_description='') where colors is the extracted palette list",
+        "Import build_refine_prompt from generator.prompt",
+        "A test verifies the refine path calls generate with a prompt dict whose system key contains the refine system prompt text",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 14,
       "passes": false,
-      "notes": ""
+      "notes": "BUG-06 from audit. modes/image_mode.py line 73."
     },
     {
       "id": "US-015",
-      "title": "Keychain key management and config setup wizard",
-      "description": "As a user, I want to store and retrieve API keys securely via the OS keychain and run a first-time setup wizard.",
+      "title": "Fix image loader: tighten magic bytes and handle UnidentifiedImageError (BUG-03, BUG-14)",
+      "description": "As a developer, I need the image loader to correctly validate WebP magic bytes and catch PIL's UnidentifiedImageError as ValueError so the API never leaks unhandled exceptions.",
       "acceptanceCriteria": [
-        "security/keystore.py: full implementation using keyring library \u2014 get_key(provider) reads from OS keychain, set_key(provider, key) writes to OS keychain",
-        "Keys never written to config.toml (hard error if attempted)",
-        "config.toml stored at ~/.config/tty-theme/config.toml with non-key fields only: provider, similarity_threshold, daily_spend_cap_usd, privacy_mode",
-        "'tty-theme config setup' interactive wizard prompts for provider choice and optional API key",
-        "'tty-theme config set-key <provider>' prompts for key with hidden input (typer.prompt secret=True)",
-        "'tty-theme config list' shows configured providers with masked keys (last 4 chars visible)",
-        "Tests pass: set_key then get_key returns same value, config.toml never contains key material",
-        "ruff check passes"
+        "In image/loader.py, change the RIFF entry to validate bytes 8-11 == b'WEBP': check first 12 bytes, require [0:4] == b'RIFF' and [8:12] == b'WEBP'",
+        "Remove the b'\\x00\\x00\\x00' catch-all entry from _ALLOWED_MAGIC",
+        "Wrap the PIL Image.open() call in a try/except that catches PIL.UnidentifiedImageError and re-raises as ValueError('Unsupported or corrupt image format')",
+        "A test verifies a WAV file (RIFF container) is rejected",
+        "A test verifies an unknown binary file starting with null bytes is rejected",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 15,
       "passes": false,
-      "notes": ""
+      "notes": "BUG-03 and BUG-14 from audit."
     },
     {
       "id": "US-016",
-      "title": "MiniLM embeddings module",
-      "description": "As a developer, I need the local MiniLM embedding module to encode prompts as float vectors stored as JSON.",
+      "title": "Fix log_cost TOCTOU race with SQLite UPSERT (BUG-09)",
+      "description": "As a developer, I need log_cost to use an atomic UPSERT so concurrent requests cannot double-count costs.",
       "acceptanceCriteria": [
-        "cache/embeddings.py: encode(text: str) -> list[float] uses sentence-transformers all-MiniLM-L6-v2 model",
-        "Vectors stored via json.dumps(vector.tolist()) and loaded via json.loads() + numpy.array(..., dtype=numpy.float32) \u2014 JSON only, no binary serialization formats",
-        "cosine_similarity(a: list[float], b: list[float]) -> float computes dot product / (norm_a * norm_b)",
-        "Model loaded lazily (on first call) and cached in module-level variable",
-        "Tests pass: encode returns list of floats, cosine_similarity([1,0],[1,0])==1.0, cosine_similarity([1,0],[0,1])==0.0",
-        "ruff check passes"
+        "Add a UNIQUE(date, provider) constraint to the cost_log table in cache/db.py init_db()",
+        "Replace the SELECT + conditional INSERT/UPDATE in log_cost() with a single INSERT INTO cost_log(date, provider, calls, cost_usd) VALUES(?,?,1,?) ON CONFLICT(date, provider) DO UPDATE SET calls = calls + 1, cost_usd = cost_usd + excluded.cost_usd",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 16,
       "passes": false,
-      "notes": ""
+      "notes": "BUG-09 from audit. cache/db.py lines 141-156."
     },
     {
       "id": "US-017",
-      "title": "Tiered cache \u2014 similarity search tier (tier 2)",
-      "description": "As a developer, I need the similarity search tier so semantically similar prompts share cached results without an LLM call.",
+      "title": "Fix tier_used always hardcoded in API response (BUG-08)",
+      "description": "As an API consumer, I need the tier_used field in GenerateResponse to reflect the actual cache tier used so I can understand whether a result was cached or generated.",
       "acceptanceCriteria": [
-        "modes/prompt_mode.py: step A4 now encodes the query and checks cosine similarity against all cached embeddings",
-        "Returns the cached theme if best match score >= 0.85 (similarity_threshold from config)",
-        "Tier used logged: tier_used=2 in audit_log when similarity hit",
-        "New themes saved with their embedding (calls embeddings.encode() before cache.save_theme())",
-        "Tests pass: two semantically similar queries share a cache hit at threshold 0.85, dissimilar query misses",
-        "ruff check passes"
+        "Modify generate_from_prompt() in modes/prompt_mode.py to return a tuple (theme_str, tier: int) where tier=1 for hash hit, tier=2 for similarity hit, tier=3 for LLM generation",
+        "Modify generate_from_image() in modes/image_mode.py to return (theme_str, tier: int) where tier=1 for pHash cache hit, tier=3 for fresh extraction",
+        "Update api/main.py /v1/generate to unpack the tuple and set tier_used correctly",
+        "Update cli/main.py to handle the new return value (unpack tuple, use theme_str only)",
+        "Tests pass",
+        "Typecheck passes"
       ],
       "priority": 17,
       "passes": false,
-      "notes": ""
+      "notes": "BUG-08 from audit. api/main.py lines 135 and 145."
     },
     {
       "id": "US-018",
-      "title": "SSRF guard \u2014 full implementation",
-      "description": "As a developer, I need the real SSRF guard replacing the stub, blocking RFC1918, loopback, and link-local addresses.",
+      "title": "Add progress feedback to CLI generate command (CLI-3)",
+      "description": "As a user, I want to see progress messages during theme generation so I know the tool is working and not hung during LLM calls.",
       "acceptanceCriteria": [
-        "security/ssrf_guard.py: check_url(url: str) -> None raises ValueError for non-https:// URLs",
-        "Resolves hostname to IP; raises ValueError if IP is in RFC1918 (10/8, 172.16/12, 192.168/16), loopback (127.0.0.0/8), link-local (169.254/16), IPv6 ::1",
-        "Timeout on DNS resolution: 5s",
-        "Raises ValueError for bare IP URLs that are private",
-        "Tests pass: https://example.com passes, http:// raises, 192.168.1.1 raises, 127.0.0.1 raises",
-        "ruff check passes"
+        "In cli/main.py generate(), before calling generate_from_prompt or generate_from_image, print 'searching cache...' to stderr",
+        "After provider resolution, print '  generating via <provider.name>...' to stderr (requires provider name to be accessible at that level, or print it from inside the mode functions using a callback/echo param)",
+        "All status messages go to stderr (typer.echo(..., err=True)) so they do not contaminate piped output",
+        "Typecheck passes"
       ],
       "priority": 18,
       "passes": false,
-      "notes": ""
+      "notes": "CLI-3 from UX audit. cli/main.py lines 63-69."
     },
     {
       "id": "US-019",
-      "title": "Safe image loader \u2014 magic bytes, size cap, EXIF strip",
-      "description": "As a developer, I need the safe image loader so malicious or oversized images are rejected before processing.",
+      "title": "Improve CLI error messages with actionable guidance (CLI-1, CLI-2)",
+      "description": "As a user, I want error messages to tell me what went wrong and what to do next so I am not left with a cryptic Python exception string.",
       "acceptanceCriteria": [
-        "image/loader.py: load_image(source: str) -> PIL.Image.Image accepts local path or HTTPS URL",
-        "For URLs: calls ssrf_guard.check_url() first, then fetches with 10s timeout, 10MB max download",
-        "Magic byte check: first 12 bytes must match PNG (89 50 4E 47), JPEG (FF D8 FF), WEBP (52 49 46 46 ... 57 45 42 50), or GIF (47 49 46 38) \u2014 raises ValueError otherwise",
-        "PIL.Image.MAX_IMAGE_PIXELS set to 4096*4096; DecompressionBombWarning promoted to error",
-        "Dimension cap: raises ValueError if width or height > 4096",
-        "EXIF stripped: image returned via PIL ImageOps.exif_transpose with .info cleared",
-        "For local paths: resolved to absolute path, must be within CWD or home directory",
-        "Tests pass: valid PNG loads, JPEG from URL loads, GIF raises ValueError, 5000px image raises",
-        "ruff check passes"
+        "In cli/main.py generate(), when neither --prompt nor --image is provided, print a multi-line help message: 'Error: at least one input is required.' followed by two usage examples and 'Run tty-theme generate --help for all options.'",
+        "Catch RuntimeError from resolve_provider separately and print: 'No LLM provider available. Run tty-theme config setup to add an API key, or start Ollama with: ollama serve'",
+        "Typecheck passes"
       ],
       "priority": 19,
       "passes": false,
-      "notes": ""
+      "notes": "CLI-1 and CLI-2 from UX audit."
     },
     {
       "id": "US-020",
-      "title": "Perceptual hash (pHash) computation",
-      "description": "As a developer, I need perceptual hash computation so near-identical images share a cached theme.",
+      "title": "Add --install overwrite guard and post-install activation hint (CLI-4)",
+      "description": "As a user, I want to be warned before overwriting an existing theme and told how to activate it in my terminal config after installing.",
       "acceptanceCriteria": [
-        "image/phash.py: compute_phash(img: PIL.Image.Image) -> str using imagehash.phash(), returns hex string",
-        "hash_distance(h1: str, h2: str) -> int returns Hamming distance between two pHash hex strings",
-        "Tests pass: same image produces identical hash, slightly modified image has distance < 10, unrelated images have distance > 20",
-        "ruff check passes"
+        "In cli/main.py _install_theme(), check if dest already exists before writing",
+        "If it exists, print a warning 'Theme <name> already exists at <path>. Use --force to overwrite.' and return None without writing",
+        "Add --force / -f bool flag to the generate command; if --force is passed, write without checking",
+        "After a successful Ghostty install, print to stderr: 'To activate: add `theme = <name>` to ~/.config/ghostty/config'",
+        "After a successful iTerm2 install, print to stderr: 'To activate: open iTerm2 → Preferences → Profiles → Colors → Color Presets → <name>'",
+        "Typecheck passes"
       ],
       "priority": 20,
       "passes": false,
-      "notes": ""
+      "notes": "CLI-4 from UX audit. cli/main.py lines 77-82."
     },
     {
       "id": "US-021",
-      "title": "k-means color extractor",
-      "description": "As a developer, I need k-means color clustering to extract 16 dominant colors from an image.",
+      "title": "Move sentence-transformers to optional dependency group",
+      "description": "As a developer, I need sentence-transformers (and its 2GB PyTorch dep) to be optional so users who don't need tier-2 similarity caching don't pay the install cost.",
       "acceptanceCriteria": [
-        "image/extractor.py: extract_colors(img: PIL.Image.Image, k: int = 16) -> list[str] returns list of k hex color strings",
-        "Image resized to 200x200 before clustering (performance)",
-        "Uses sklearn.cluster.KMeans with k clusters on RGB pixels",
-        "Returns cluster centers as sorted hex strings (#RRGGBB)",
-        "Tests pass: solid red image returns a red-dominant palette, k=16 returns exactly 16 colors",
-        "ruff check passes"
+        "Move sentence-transformers from [project.dependencies] to [project.optional-dependencies] under key 'embeddings' in pyproject.toml",
+        "In cache/embeddings.py, wrap the import in try/except ImportError and raise a clear RuntimeError('Install tty-theme[embeddings] to enable similarity search') if not available",
+        "In modes/prompt_mode.py, the ImportError guard for sentence-transformers already exists — verify it correctly skips tier-2 and falls through to tier-3",
+        "uv sync installs without sentence-transformers by default",
+        "uv sync --extra embeddings installs it",
+        "Typecheck passes"
       ],
       "priority": 21,
       "passes": false,
-      "notes": ""
+      "notes": "PERF-L2 from audit. pyproject.toml line 25."
     },
     {
       "id": "US-022",
-      "title": "Palette mapper \u2014 image colors to Ghostty keys",
-      "description": "As a developer, I need the palette mapper to assign extracted image colors to the 21 Ghostty theme keys.",
+      "title": "Remove dead tomli dependency and fix GhosttySerializer file_extension",
+      "description": "As a developer, I need dead code removed and the Ghostty serializer's file_extension to match the actual install path so future use of the method doesn't introduce a regression.",
       "acceptanceCriteria": [
-        "image/mapper.py: map_palette(colors: list[str]) -> dict maps 16 extracted colors to Ghostty keys",
-        "Darkest color (lowest luminance) \u2192 background",
-        "Lightest color (highest luminance) \u2192 foreground",
-        "Highest-saturation colors \u2192 palette 1-6 (ANSI colors)",
-        "Remaining colors fill palette 0, 7-15 by luminance order",
-        "cursor-color = palette 3 (yellow-ish), selection-background = palette 4 (blue-ish), selection-foreground = background",
-        "After mapping: validate WCAG AA contrast ratio (fg/bg >= 4.5:1); if fails, lighten foreground by incrementing luminance until passing",
-        "Tests pass: all-dark image produces mapping where background is darker than foreground, contrast passes",
-        "ruff check passes"
+        "Remove the tomli conditional dependency from pyproject.toml (unreachable since requires-python>=3.11)",
+        "Change GhosttySerializer.file_extension() in generator/serializers/ghostty.py to return '' (empty string, matching the install logic in cli/main.py)",
+        "uv sync completes without error",
+        "Typecheck passes"
       ],
       "priority": 22,
       "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-023",
-      "title": "Image mode pipeline \u2014 full B1-B8 implementation",
-      "description": "As a developer, I need the complete image mode pipeline so users can generate themes from photos.",
-      "acceptanceCriteria": [
-        "modes/image_mode.py: generate_from_image(source: str, target: str, refine: bool = False) -> str runs the full pipeline",
-        "B1: validate source (local magic-byte or URL SSRF guard)",
-        "B2: load_image() with size/dim caps",
-        "B3: compute_phash()",
-        "B4: pHash cache lookup \u2014 returns cached theme on hit",
-        "B5: extract_colors(k=16)",
-        "B6: map_palette() \u2192 Ghostty dict",
-        "B7: if refine=True, calls LLM with image refinement prompt (PRD \u00a79.2) and validates output",
-        "B8: validate_theme(), cache by pHash with input_type='image', serialize and return",
-        "CLI: 'tty-theme generate --image ./photo.jpg' works end-to-end",
-        "Tests pass: valid image produces 21-key theme, pHash cache hit skips extraction",
-        "ruff check passes"
-      ],
-      "priority": 23,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-024",
-      "title": "Pre-seeded community theme index",
-      "description": "As a user, I want 50 bundled themes available immediately without an API key or local model.",
-      "acceptanceCriteria": [
-        "themes/index.json contains at least 50 theme entries, each with: name, source ('community'), license ('MIT' or 'CC0'), author, theme_data (Ghostty key=value string), palette_json (16 hex colors)",
-        "Every theme_data passes validate_theme()",
-        "Themes cover diverse aesthetics: dark, light, neon, pastel, earth tones, high contrast",
-        "'tty-theme seed' command inserts all entries into SQLite with source='community'",
-        "Seed is idempotent (duplicate query_hash skipped, not error)",
-        "ruff check passes"
-      ],
-      "priority": 24,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-025",
-      "title": "Daily spend cap and cost circuit breaker",
-      "description": "As a user, I want a daily spend cap so I never accidentally spend more than my configured limit on LLM API calls.",
-      "acceptanceCriteria": [
-        "cache/db.py: log_cost(provider: str, cost_usd: float) writes to cost_log; get_daily_spend() -> float sums today's cost_usd",
-        "modes/prompt_mode.py: checks get_daily_spend() before LLM call; raises SpendCapError if >= daily_spend_cap_usd (default $1.00)",
-        "LLM HTTP 429: exponential backoff (1s, 2s, 4s), max 3 retries, then raises RateLimitError \u2014 no infinite loops",
-        "'tty-theme config status' prints today's spend and remaining cap",
-        "Tests pass: spend at cap raises SpendCapError, spend below cap proceeds",
-        "ruff check passes"
-      ],
-      "priority": 25,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-026",
-      "title": "Rate limiting module \u2014 token bucket for CLI and API mode",
-      "description": "As a developer, I need a token bucket rate limiter for future API/web mode integration.",
-      "acceptanceCriteria": [
-        "security/rate_limiter.py: TokenBucket class with capacity, refill_rate (tokens/second), consume() -> bool",
-        "consume() returns True if a token is available and deducts it; returns False if bucket is empty",
-        "RateLimiter(ip_hash: str) wraps TokenBucket; configured for 10 req/min, 50 req/hour per IP",
-        "State stored in SQLite rate_limits table (ip_hash, tokens, last_refill)",
-        "Tests pass: 11 rapid consume() calls returns False on 11th, after 6s refill returns True",
-        "ruff check passes"
-      ],
-      "priority": 26,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-027",
-      "title": "--install flag for Ghostty and iTerm2",
-      "description": "As a user, I want to install generated themes directly to my terminal's config directory with a single flag.",
-      "acceptanceCriteria": [
-        "generate --install --name <name> writes the theme file to the correct path for the target",
-        "Ghostty: ~/.config/ghostty/themes/<name> (creates parent dirs if needed)",
-        "iTerm2: ~/Library/Application Support/iTerm2/DynamicProfiles/<name>.itermcolors",
-        "Prints confirmation: 'Theme installed to <path>'",
-        "Raises clear error if install path is not writable",
-        "'tty-theme search <query>' command queries SQLite and prints matching theme names",
-        "'tty-theme list' prints all cached theme names",
-        "ruff check passes"
-      ],
-      "priority": 27,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-028",
-      "title": "Local GCP emulator environment \u2014 docker-compose.yml and Firebase emulator config",
-      "description": "As a developer, I need a fully local GCP-equivalent stack so I can develop and test the full Phase 4-7 feature set without touching real GCP infrastructure.",
-      "acceptanceCriteria": [
-        "docker-compose.yml in project root: 'api' service (builds from Dockerfile), 'firebase-emulator' service (firebase/firebase-tools image), port bindings: api=8000, firestore-emu=8080, auth-emu=9099, hosting-emu=5000, emulator-ui=4000",
-        "firebase.json: emulators block enables auth (9099), firestore (8080), hosting (5000), ui (4000); export/import dir set to .firebase-data/ for persistence between restarts",
-        ".env.example: FIRESTORE_EMULATOR_HOST=localhost:8080, FIREBASE_AUTH_EMULATOR_HOST=localhost:9099, FIREBASE_PROJECT_ID=tty-theme-local, GEMINI_API_KEY=, GITHUB_CLIENT_ID=, GITHUB_CLIENT_SECRET=, ENVIRONMENT=development",
-        ".gitignore updated: .env, .firebase-data/, .firebase/",
-        "docker compose up brings up all services; 'curl localhost:8000/health' returns {status: 'ok'}",
-        "DEVELOPMENT.md documents: (1) prerequisites (Docker, Node, firebase-tools), (2) 'cp .env.example .env && docker compose up', (3) emulator UI at http://localhost:4000, (4) how to seed test data",
-        "ruff check passes"
-      ],
-      "priority": 28,
-      "passes": false,
-      "notes": "LOCAL-ONLY: No gcloud or firebase deploy commands. All GCP services emulated locally via Firebase Emulator Suite + Docker Compose."
-    },
-    {
-      "id": "US-029",
-      "title": "FastAPI app skeleton \u2014 generate endpoint and health check",
-      "description": "As a developer, I need the FastAPI app with a /generate endpoint so the CLI pipeline is accessible over HTTP.",
-      "acceptanceCriteria": [
-        "api/main.py: FastAPI app with GET /health returning {status: 'ok'}",
-        "POST /v1/generate accepts JSON body: {prompt: str, target: str = 'ghostty'} or {image_url: str, target: str, refine: bool = false}",
-        "Calls prompt_mode.generate_from_prompt() or image_mode.generate_from_image() and returns {theme: str, provider: str, tier_used: int}",
-        "CORS configured: allow origins=['https://tty-theme.dev'] in production, ['*'] in development",
-        "Returns HTTP 422 on validation error with clear message",
-        "Returns HTTP 429 on rate limit or spend cap exceeded",
-        "Tests pass (httpx AsyncClient): /health returns 200, POST /v1/generate with mock provider returns theme",
-        "ruff check passes"
-      ],
-      "priority": 29,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-030",
-      "title": "Firestore backend adapter",
-      "description": "As a developer, I need a Firestore-backed ThemeRepository so the production API uses GCP instead of SQLite.",
-      "acceptanceCriteria": [
-        "cache/firestore_db.py: FirestoreThemeRepository implements the same interface as ThemeRepository (init_db, save_theme, get_by_hash, list_themes, get_all_embeddings, get_by_id, log_cost, get_daily_spend)",
-        "Uses google-cloud-firestore; themes collection stores same fields as SQLite schema",
-        "Embeddings stored as Firestore vector field (list of floats) for FindNearest support",
-        "Repository selected at runtime: if FIRESTORE_PROJECT env var set AND ENVIRONMENT != 'development' -> FirestoreThemeRepository, else SQLiteThemeRepository",
-        "Local testing uses Firebase Firestore Emulator: FIRESTORE_EMULATOR_HOST=localhost:8080 env var; google-cloud-firestore SDK auto-routes to emulator when this var is set \u2014 no code changes needed",
-        "Tests pass using Firestore Emulator (FIRESTORE_EMULATOR_HOST=localhost:8080 set in pytest env): save_theme and get_by_hash round-trip correctly",
-        "ruff check passes"
-      ],
-      "priority": 30,
-      "passes": false,
-      "notes": "LOCAL: Tests run against Firebase Firestore Emulator, not real GCP."
-    },
-    {
-      "id": "US-031",
-      "title": "Dockerfile and Cloud Run deploy configuration",
-      "description": "As a developer, I need a production-ready Dockerfile and Cloud Run config so the API deploys to GCP.",
-      "acceptanceCriteria": [
-        "Dockerfile in project root: Python 3.11-slim base, uv sync --no-dev, uvicorn api/main.py on port 8000, non-root user (uid 1000)",
-        "docker-compose.yml updated: 'api' service builds from Dockerfile, mounts .env, depends_on firebase-emulator, sets FIRESTORE_EMULATOR_HOST=firebase-emulator:8080 and FIREBASE_AUTH_EMULATOR_HOST=firebase-emulator:9099",
-        ".dockerignore: .env, *.pyc, __pycache__, .git, tests/, .firebase-data/",
-        "'docker compose build && docker compose up api' starts the API; 'curl localhost:8000/health' returns 200",
-        "DEPLOY.md documents the future Cloud Run deploy command for reference (not executed): gcloud run deploy tty-theme-api --region=us-central1 --project=YOUR_GCP_PROJECT_ID --min-instances=0 --max-instances=10 --memory=256Mi --concurrency=80 --set-secrets=GEMINI_API_KEY=...",
-        "cloudbuild.yaml stub: steps run pip-audit, bandit, ruff, pytest \u2014 intentionally omits 'gcloud run deploy' step (placeholder comment: '# TODO: uncomment for production deploy')",
-        "ruff check passes"
-      ],
-      "priority": 31,
-      "passes": false,
-      "notes": "LOCAL-ONLY: No gcloud run deploy. Cloud Run deploy documented in DEPLOY.md for future use only."
-    },
-    {
-      "id": "US-032",
-      "title": "API rate limiting and audit log middleware",
-      "description": "As a developer, I need per-IP rate limiting and an audit log in the API so abuse is tracked and throttled.",
-      "acceptanceCriteria": [
-        "api/middleware.py: RateLimitMiddleware reads X-Forwarded-For, hashes IP with SHA256, checks TokenBucket",
-        "Limits: 10 req/min, 50 req/hour per IP hash \u2014 returns HTTP 429 with Retry-After header",
-        "AuditLogMiddleware writes to audit_log (ip_hash, query_hash, input_type, provider, tier_used, cost_usd, status) after each /v1/generate response",
-        "Raw IP never logged \u2014 only SHA256(IP)",
-        "Spend circuit breaker: if hourly Firestore cost_log sum > $10 (configurable), /v1/generate returns 503 with {error: 'service_temporarily_unavailable', reason: 'spend_limit'}",
-        "Tests pass: 11th request from same IP returns 429, audit_log entry written for successful request",
-        "ruff check passes"
-      ],
-      "priority": 32,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-033",
-      "title": "Vite + Tailwind static site scaffold",
-      "description": "As a developer, I need the frontend scaffold with design tokens, Space Mono font, and Tailwind config so UI components have a consistent base.",
-      "acceptanceCriteria": [
-        "web/ directory with index.html, vite.config.js, package.json (vite, tailwindcss)",
-        "tailwind.config.js extends theme with design tokens from PRD \u00a719.1: background #0F172A, surface #1E293B, border #334155, muted #64748B, foreground #F8FAFC, accent #22C55E, ai #818CF8",
-        "Space Mono loaded from Google Fonts in index.html <head>",
-        "Global CSS: body uses background and foreground tokens, font-family Space Mono",
-        "Ko-fi support link in header nav: URL https://ko-fi.com/Y8Y51KQK8E, styled per PRD \u00a719.8, opens in new tab",
-        "GA4 placeholder comment in index.html (no real tag ID hardcoded)",
-        "'npm run build' completes without errors",
-        "Verify in browser using dev-browser skill: page loads, Space Mono renders, dark background visible"
-      ],
-      "priority": 33,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-034",
-      "title": "Home page \u2014 provider selector, target selector, prompt/image tabs",
-      "description": "As a user, I want the generator home page with provider and terminal selectors and a prompt input so I can generate themes from the browser.",
-      "acceptanceCriteria": [
-        "/ route: ProviderSelector pill group (Gemini default, BYOK expand inline per PRD \u00a76.4)",
-        "TargetSelector pill toggle: Ghostty / iTerm2",
-        "Prompt tab: textarea with 200-char counter (aria-live), suggestion chip buttons below",
-        "Image tab: file picker + optional HTTPS URL input",
-        "Submit button labeled 'Generate' with #22C55E accent",
-        "POST to /v1/generate API on submit; loading spinner while waiting",
-        "On success: navigate to results page with theme data",
-        "BYOK key entry: shows security disclaimer from PRD \u00a76.4, stored in localStorage tty-theme:byok:<provider>",
-        "prefers-reduced-motion: all transitions 0.01ms",
-        "Verify in browser using dev-browser skill: type a prompt, click Generate, see loading state"
-      ],
-      "priority": 34,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-035",
-      "title": "HeroTerminal animation component",
-      "description": "As a user, I want the animated terminal preview hero so the product's value is immediately visible on page load.",
-      "acceptanceCriteria": [
-        "HeroTerminal component: macOS traffic lights (red #FF5F57, yellow #FFBD2E, green #28CA41) in window chrome",
-        "Container has perspective 1200px, rotateX(4deg) rotateY(-2deg) 3D tilt",
-        "Float animation: oscillates rotateX(2-4deg) rotateY(-2..2deg) over 6s ease-in-out loop",
-        "Scanline overlay: repeating-linear-gradient every 4px, 4% opacity, pointer-events none",
-        "TypeWriter: JS char-by-char at 45ms/char, outputs demo theme cycle (cyberpunk neon rain -> tokyo midnight -> aurora borealis ice)",
-        "PaletteStrip: 16-color strip at bottom, swaps with 400ms transition-colors",
-        "prefers-reduced-motion collapses all animations to instant",
-        "Verify in browser using dev-browser skill: hero loads, typing animation runs, palette strip updates on theme change"
-      ],
-      "priority": 35,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-036",
-      "title": "Results page \u2014 palette grid, format toggle, copy/install/share",
-      "description": "As a user, I want to see my generated theme with color swatches, copy the config, and share it.",
-      "acceptanceCriteria": [
-        "/t/:slug/preview route: PaletteGrid 8x2 swatch grid (normal row palette 0-7, bright row palette 8-15), hover shows hex + ANSI index",
-        "FormatToggle: Ghostty / iTerm2 switch \u2014 updates displayed config text",
-        "Config displayed in <pre> block with syntax colors",
-        "Copy button: copies config to clipboard, shows 'Copied!' for 2s (aria-live='polite')",
-        "Install button: copies 'tty-theme install <slug>' to clipboard",
-        "Share button: copies tty-theme.dev/t/<slug> to clipboard, shows ShareToast 2.5s auto-dismiss",
-        "Similar themes section: shows 3 ThemeCard components",
-        "Verify in browser using dev-browser skill: both format toggles show valid config, copy button works"
-      ],
-      "priority": 36,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-037",
-      "title": "Firebase Hosting deploy config",
-      "description": "As a developer, I need Firebase Hosting configured so the web UI deploys to tty-theme.dev with CDN and HTTPS.",
-      "acceptanceCriteria": [
-        "firebase.json hosting block: public=web/dist, rewrites /api/* \u2192 http://localhost:8000 (local dev), headers: HSTS max-age=31536000, X-Frame-Options SAMEORIGIN, X-Content-Type-Options nosniff",
-        ".firebaserc: project alias 'default' = 'tty-theme-local' (local emulator project ID)",
-        "DEVELOPMENT.md updated: run 'npm run build' in web/, then 'firebase emulators:start --only hosting' serves built site at http://localhost:5000",
-        "firebase.json emulators block already set in US-028 \u2014 verify hosting emulator entry is present at port 5000",
-        "GA4 placeholder comment in index.html only \u2014 no real tag ID, no firebase.json environment substitution yet (deferred to production deploy)",
-        "DEPLOY.md documents: 'firebase deploy --only hosting' for future production deploy to tty-theme.dev",
-        "ruff check passes"
-      ],
-      "priority": 37,
-      "passes": false,
-      "notes": "LOCAL-ONLY: Uses Firebase Hosting Emulator (port 5000). No 'firebase deploy' run."
-    },
-    {
-      "id": "US-038",
-      "title": "Firebase Auth \u2014 GitHub OAuth login/logout",
-      "description": "As a user, I want to log in with GitHub so I can publish themes to the community gallery.",
-      "acceptanceCriteria": [
-        "Firebase Auth initialized in web app with GitHub OAuth provider AND Firebase Auth Emulator support: initializeApp() followed by connectAuthEmulator(auth, 'http://localhost:9099') when VITE_USE_EMULATOR=true",
-        "Login button in header nav: 'Sign in with GitHub' opens popup, sets currentUser on success",
-        "Logout button replaces login when signed in, shows GitHub avatar + username",
-        "auth.currentUser.getIdToken() used for authenticated API requests (Authorization: Bearer <token>)",
-        "API middleware verifies Firebase ID token; when FIREBASE_AUTH_EMULATOR_HOST env var is set, uses emulator for token verification (firebase-admin SDK auto-routes to emulator)",
-        "DEVELOPMENT.md updated: documents creating a test user in emulator UI at http://localhost:4000/auth",
-        "Verify in browser using dev-browser skill: with emulator running, login flow completes using a test account created in emulator UI"
-      ],
-      "priority": 38,
-      "passes": false,
-      "notes": "LOCAL: Uses Firebase Auth Emulator (port 9099). No real GitHub OAuth credentials needed for local testing \u2014 emulator bypasses OAuth."
-    },
-    {
-      "id": "US-039",
-      "title": "Community gallery API \u2014 list, detail, download endpoints",
-      "description": "As a developer, I need the read-only gallery API so the community browse page can fetch themes.",
-      "acceptanceCriteria": [
-        "GET /v1/themes: returns paginated list, query params: sort (downloads|likes|newest), target (ghostty|iterm2), q (full-text search), page, limit (default 20, max 100)",
-        "GET /v1/themes/:slug: returns full theme detail including ghostty_data, iterm2_data, palette_json, author, stats",
-        "GET /v1/themes/:slug/download/:fmt: returns theme file with correct Content-Type and Content-Disposition: attachment; filename=<slug>.<ext>",
-        "download increments download_count atomically in Firestore",
-        "Cache-Control: public, max-age=300 on list/detail endpoints",
-        "Tests pass: list returns 200 with items array, unknown slug returns 404, download increments counter",
-        "ruff check passes"
-      ],
-      "priority": 39,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-040",
-      "title": "Gallery write API \u2014 publish, like, flag endpoints",
-      "description": "As a developer, I need the write endpoints so authenticated users can publish themes and anyone can like or flag.",
-      "acceptanceCriteria": [
-        "POST /v1/themes: requires Firebase auth token, accepts {slug, display_name, ghostty_data?, iterm2_data?, palette_json, source, tags[]}",
-        "Server validates: slug matches [a-z0-9-]+ (3-60 chars), slug not in blocklist of reserved words, palette_json is 16 valid hex colors, ghostty_data and iterm2_data (if provided) pass validate_theme()",
-        "Rate limit: max 10 publishes/day per user",
-        "POST /v1/themes/:slug/like: fingerprint = SHA256(IP+UA), one like per fingerprint, increments like_count",
-        "DELETE /v1/themes/:slug/like: removes like",
-        "POST /v1/themes/:slug/flag: sets is_flagged=True after 3 flags",
-        "DELETE /v1/themes/:slug: auth required, author only",
-        "Tests pass: publish with valid data creates theme, duplicate slug returns 409, invalid palette_json returns 422",
-        "ruff check passes"
-      ],
-      "priority": 40,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-041",
-      "title": "Community gallery browse page",
-      "description": "As a user, I want to browse community themes with sorting, filtering, and search so I can discover themes I like.",
-      "acceptanceCriteria": [
-        "/browse route: SortBar with Downloads / Likes / Newest tabs, terminal filter (All / Ghostty / iTerm2), search input",
-        "ThemeCard grid: each card shows 8-color strip, name, author, target badges, download count, like count",
-        "Clicking ThemeCard navigates to /t/:slug",
-        "Search input debounced 300ms, updates results without page reload",
-        "Pagination: 'Load more' button appends next page",
-        "Filter state persisted in URL query params",
-        "Verify in browser using dev-browser skill: sort tabs switch ordering, search filters results, load more appends cards"
-      ],
-      "priority": 41,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-042",
-      "title": "Theme detail page \u2014 shareable URL and og:image",
-      "description": "As a user, I want a shareable theme page at /t/:slug with a social preview image so I can share themes on social media.",
-      "acceptanceCriteria": [
-        "/t/:slug route: full theme detail \u2014 16-swatch PaletteGrid, FormatToggle, config display, copy/download/install/share buttons",
-        "'Clone and remix' button pre-fills generator with the theme's inspiration prompt",
-        "og:title, og:description, og:image meta tags generated server-side with palette strip PNG (16 swatches, 480x60px)",
-        "og:image served by GET /v1/themes/:slug/og-image endpoint returning PNG",
-        "Install command shown: 'tty-theme install <slug>'",
-        "Verify in browser using dev-browser skill: page loads with correct theme colors, share button copies URL, download button downloads file"
-      ],
-      "priority": 42,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-043",
-      "title": "CLI community gallery commands",
-      "description": "As a user, I want CLI commands to publish, browse, install, and share gallery themes.",
-      "acceptanceCriteria": [
-        "'tty-theme publish <name> --target ghostty --target iterm2' looks up theme in local cache and POSTs to /v1/themes (requires GitHub auth token in keychain)",
-        "'tty-theme browse --sort downloads' prints a table of top themes with name, author, downloads",
-        "'tty-theme install <slug> --target ghostty' calls GET /v1/themes/:slug/download/ghostty and writes to Ghostty install path",
-        "'tty-theme share <name>' prints https://tty-theme.dev/t/<slug> and copies to clipboard",
-        "'tty-theme auth login' opens browser for GitHub OAuth, stores token in keychain",
-        "Tests pass: install command writes correct file to Ghostty path, browse command prints table",
-        "ruff check passes"
-      ],
-      "priority": 43,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-044",
-      "title": "Security hardening \u2014 bandit, pip-audit, ruff S-rules in CI",
-      "description": "As a developer, I need all security gates enforced in CI so no unsafe code patterns slip through.",
-      "acceptanceCriteria": [
-        "pyproject.toml [tool.bandit] excludes tests/, configures S-rules: S301, S302, S303, S307, S324",
-        "pyproject.toml [tool.ruff.lint] selects S rules; S101 skipped in tests/, S603/S607 allowed for subprocess with shell=False",
-        "cloudbuild.yaml runs 'pip-audit --require-hashes' and fails build on any known CVE",
-        "pre-commit config (.pre-commit-config.yaml): detect-secrets, ruff, bandit hooks",
-        ".gitignore: .env, *.key, *.pem, config.toml",
-        "No eval, exec, or unsafe deserialization present in non-test source code",
-        "ruff check passes, bandit passes"
-      ],
-      "priority": 44,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-045",
-      "title": "GCP IAM least privilege and Secret Manager wiring",
-      "description": "As a developer, I need GCP IAM configured with least privilege and all secrets in Secret Manager.",
-      "acceptanceCriteria": [
-        "security/secrets.py: get_secret(name: str) -> str \u2014 reads from Secret Manager in production (google-cloud-secret-manager), falls back to os.environ[name] when ENVIRONMENT=development or GCP_PROJECT not set",
-        "api/main.py updated to use get_secret() for GEMINI_API_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET at startup",
-        "All local dev: secrets provided via .env file (loaded by python-dotenv in development mode only); .env never committed",
-        ".env.example has all secret keys with empty values and a comment warning not to commit .env",
-        "DEPLOY.md documents: service account tty-theme-api needs only roles/datastore.user, roles/secretmanager.secretAccessor, roles/monitoring.metricWriter; no roles/owner or roles/editor",
-        "DEPLOY.md documents gcloud commands to create secrets: 'gcloud secrets create GEMINI_API_KEY --data-file=-' (not executed by Ralph)",
-        "ruff check passes"
-      ],
-      "priority": 45,
-      "passes": false,
-      "notes": "LOCAL: Secrets come from .env file. Secret Manager integration wired but not tested against real GCP \u2014 tested via env var fallback."
-    },
-    {
-      "id": "US-046",
-      "title": "README and CLI documentation",
-      "description": "As a user, I want a comprehensive README so I can install and use tty-theme without reading the source code.",
-      "acceptanceCriteria": [
-        "README.md: project overview, installation (pip install tty-theme / uv tool install tty-theme), quickstart examples",
-        "Sections: Prompt mode, Image mode, Configuration (providers + keys), Output formats, CLI reference table",
-        "Provider setup guide: how to run Ollama, how to set a cloud API key",
-        "Security section: links to SECURITY.md (vulnerability reporting)",
-        "Contributing section: link to CONTRIBUTING.md, dev setup commands",
-        "Badges: PyPI version, CI status, license (MIT)"
-      ],
-      "priority": 46,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-047",
-      "title": "PyPI publish, SBOM, and sigstore signing",
-      "description": "As a developer, I need the release pipeline so tty-theme is installable via pip with a verifiable supply chain.",
-      "acceptanceCriteria": [
-        "pyproject.toml: [build-system] requires hatchling, [project] includes version, license=MIT, classifiers, entry-points",
-        "cloudbuild.yaml: on git tag push, runs 'python -m build', 'cyclonedx-py bom . -o sbom.json', 'sigstore sign dist/*.whl dist/*.tar.gz'",
-        "'uv build' produces .whl and .tar.gz in dist/",
-        "GitHub Release: sbom.json and .sig files attached as release assets",
-        "PyPI publish step uses trusted publishing (OIDC) \u2014 no PyPI token stored in secrets",
-        "ruff check passes"
-      ],
-      "priority": 47,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-048",
-      "title": "Monitoring alerts and domain setup",
-      "description": "As a developer, I need Cloud Monitoring alerts and the tty-theme.dev domain wired up so I know when the service is degraded.",
-      "acceptanceCriteria": [
-        "DEPLOY.md documents (but does NOT execute) all Cloud Monitoring alert policies: p99 latency > 5s, error rate > 5% over 5 min, Gemini cost > $5/day",
-        "DEPLOY.md documents custom domain setup: firebase.json hosting.site target + 'firebase hosting:channel:deploy' workflow",
-        "api/main.py: /metrics endpoint returns Prometheus-format text (request count, latency histogram, error count) using prometheus-client library \u2014 for local monitoring without GCP",
-        "docker-compose.yml updated: optional 'prometheus' service (prom/prometheus image) with prometheus.yml scraping localhost:8000/metrics at 15s interval",
-        "prometheus.yml created in project root with static_configs targeting api:8000",
-        "DEVELOPMENT.md updated: 'docker compose --profile monitoring up' starts Prometheus at http://localhost:9090",
-        "ruff check passes"
-      ],
-      "priority": 48,
-      "passes": false,
-      "notes": "LOCAL: No GCP Monitoring deployed. Prometheus local stack for development observability. GCP alerts documented in DEPLOY.md for future use."
-    },
-    {
-      "id": "US-049",
-      "title": "Terraform root module \u2014 providers, backend, variables",
-      "description": "As a developer, I need the Terraform root module so all GCP resources are defined as code and can be validated locally without applying.",
-      "acceptanceCriteria": [
-        "terraform/ directory with: main.tf, variables.tf, outputs.tf, versions.tf, terraform.tfvars.example",
-        "versions.tf: terraform required_version >=1.6; required_providers google>=5.0, google-beta>=5.0",
-        "variables.tf: project_id, region (default us-central1), environment (default development), app_name (default tty-theme)",
-        "main.tf: google provider configured with project=var.project_id, region=var.region",
-        "GCS backend block in main.tf with bucket=tty-theme-tfstate, prefix=terraform/state (backend=false for local validate)",
-        "terraform.tfvars.example: project_id=YOUR_GCP_PROJECT_ID, region=us-central1, environment=production",
-        "'terraform init -backend=false && terraform validate' passes with no errors",
-        "README section in DEPLOY.md: 'cd terraform && terraform init && terraform plan -var-file=terraform.tfvars'"
-      ],
-      "priority": 49,
-      "passes": false,
-      "notes": "LOCAL: Run 'terraform init -backend=false && terraform validate && terraform plan' \u2014 no apply."
-    },
-    {
-      "id": "US-050",
-      "title": "Terraform \u2014 Artifact Registry and Cloud Build IAM",
-      "description": "As a developer, I need Artifact Registry provisioned so Docker images have a home and Cloud Build can push to it.",
-      "acceptanceCriteria": [
-        "terraform/modules/artifact_registry/main.tf: google_artifact_registry_repository resource, format=DOCKER, location=var.region, repository_id=tty-theme-api",
-        "terraform/modules/artifact_registry/variables.tf: project_id, region, repository_id",
-        "terraform/modules/artifact_registry/outputs.tf: repository_url output (used by Cloud Run module)",
-        "Cloud Build SA binding: roles/artifactregistry.writer granted to cloudbuild SA",
-        "Module called from root main.tf",
-        "'terraform validate' passes"
-      ],
-      "priority": 50,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-051",
-      "title": "Terraform \u2014 IAM service account (least privilege)",
-      "description": "As a developer, I need the tty-theme-api service account with only the roles it needs.",
-      "acceptanceCriteria": [
-        "terraform/modules/iam/main.tf: google_service_account resource name=tty-theme-api",
-        "IAM bindings: roles/datastore.user, roles/secretmanager.secretAccessor, roles/monitoring.metricWriter \u2014 nothing broader",
-        "terraform/modules/iam/outputs.tf: service_account_email output",
-        "Module called from root main.tf",
-        "'terraform validate' passes"
-      ],
-      "priority": 51,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-052",
-      "title": "Terraform \u2014 Secret Manager (secret names, no values)",
-      "description": "As a developer, I need Secret Manager secrets declared in Terraform so names are consistent between IaC and application code.",
-      "acceptanceCriteria": [
-        "terraform/modules/secret_manager/main.tf: google_secret_manager_secret resources for GEMINI_API_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET",
-        "replication.auto{} block on each secret (not manual, for simplicity)",
-        "Secret *versions* (actual values) are NOT in Terraform \u2014 values set manually via gcloud or CI",
-        "terraform/modules/secret_manager/outputs.tf: secret_ids map output",
-        "Module called from root main.tf",
-        "'terraform validate' passes"
-      ],
-      "priority": 52,
-      "passes": false,
-      "notes": "Values are never in Terraform state. Only the secret resource shells are managed."
-    },
-    {
-      "id": "US-053",
-      "title": "Terraform \u2014 Firestore database",
-      "description": "As a developer, I need Firestore provisioned so the production database exists before the API starts.",
-      "acceptanceCriteria": [
-        "terraform/modules/firestore/main.tf: google_firestore_database resource, type=FIRESTORE_NATIVE, location_id=nam5",
-        "terraform/modules/firestore/variables.tf: project_id, location_id",
-        "google_project_service to enable firestore.googleapis.com",
-        "Module called from root main.tf",
-        "'terraform validate' passes"
-      ],
-      "priority": 53,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-054",
-      "title": "Terraform \u2014 Cloud Run service",
-      "description": "As a developer, I need the Cloud Run service defined in Terraform so the API deployment is reproducible.",
-      "acceptanceCriteria": [
-        "terraform/modules/cloud_run/main.tf: google_cloud_run_v2_service resource",
-        "Container image: var.image_url (populated from Artifact Registry output)",
-        "Env vars: ENVIRONMENT=production, GCP_PROJECT=var.project_id, FIRESTORE_PROJECT=var.project_id",
-        "Secret env vars via volumes: GEMINI_API_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET from Secret Manager",
-        "scaling: min_instance_count=0, max_instance_count=10; resources: limits cpu=1, memory=256Mi",
-        "service_account from IAM module output",
-        "google_cloud_run_v2_service_iam_member: allUsers gets roles/run.invoker (public API)",
-        "terraform/modules/cloud_run/outputs.tf: service_url output",
-        "Module called from root main.tf, depends_on iam and secret_manager modules",
-        "'terraform validate' passes"
-      ],
-      "priority": 54,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-055",
-      "title": "Terraform \u2014 Cloud Monitoring alerts",
-      "description": "As a developer, I need Cloud Monitoring alert policies in Terraform so SLOs are enforced from day one.",
-      "acceptanceCriteria": [
-        "terraform/modules/monitoring/main.tf: google_monitoring_alert_policy for p99 latency >5s, error rate >5%, daily Gemini spend >$5",
-        "google_monitoring_notification_channel resource: email type, var.alert_email",
-        "terraform/modules/monitoring/variables.tf: project_id, alert_email, service_name",
-        "Module called from root main.tf",
-        "'terraform validate' passes"
-      ],
-      "priority": 55,
-      "passes": false,
-      "notes": ""
-    },
-    {
-      "id": "US-056",
-      "title": "Terraform \u2014 local validate CI gate + terraform.tfvars.example",
-      "description": "As a developer, I need terraform validate to run in CI and a complete tfvars example so onboarding is frictionless.",
-      "acceptanceCriteria": [
-        "cloudbuild.yaml updated: new step runs 'terraform init -backend=false && terraform validate' before Docker build step",
-        "terraform.tfvars.example: all required variables with comments, no secret values",
-        "terraform/README.md: prerequisites (Terraform 1.6+, gcloud auth), commands (init, plan, apply), module dependency diagram",
-        "All terraform files pass 'terraform fmt -check'",
-        "'terraform init -backend=false && terraform validate && terraform plan -var-file=terraform.tfvars.example -var=\"project_id=placeholder\"' exits 0"
-      ],
-      "priority": 56,
-      "passes": false,
-      "notes": "LOCAL: CI runs validate+plan only. 'terraform apply' is a manual production step documented in DEPLOY.md."
+      "notes": "BUG-17 and BUG-16 from audit."
     }
   ]
 }
