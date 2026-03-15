@@ -94,3 +94,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - Simply removing `async` is the correct and complete fix; no other code changes required
   - FastAPI uses `anyio.to_thread.run_sync` for sync endpoint functions automatically
 ---
+
+## 2026-03-15 - US-010
+- Implemented: Added `self._client = httpx.Client(timeout=60.0)` in `__init__`; replaced `httpx.get/post` calls with `self._client.get/post`; added `close()` and `__del__` for cleanup
+- Files changed: providers/openai_compat.py, tests/test_providers.py
+- **Learnings for future iterations:**
+  - Patching `httpx.get/httpx.post` globally no longer works after this change — patch `providers.openai_compat.httpx.Client` to return a MagicMock with `.get`/`.post` methods instead
+  - `__del__` with bare `except Exception: pass` triggers ruff S110; suppress with `# noqa: BLE001, S110` on the except line
+  - `timeout=60.0` on the Client constructor becomes the default; override per-call with `timeout=2.0` for health checks
+---

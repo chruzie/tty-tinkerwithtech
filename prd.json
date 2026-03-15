@@ -158,7 +158,7 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "PERF-H4 from audit. providers/openai_compat.py lines 57, 65-80."
     },
     {
