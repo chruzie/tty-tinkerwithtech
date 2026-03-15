@@ -1,0 +1,21 @@
+# Ralph Progress Log
+Started: Sun 15 Mar 2026 15:37:04 MDT
+---
+
+## Codebase Patterns
+- Tests use `unittest.mock.patch("socket.getaddrinfo")` to simulate DNS resolution without network calls
+- Ruff S104 ("Possible binding to all interfaces") fires on "0.0.0.0" string literals in tests — suppress with `# noqa: S104`
+- No mypy in the venv; use `uv run ruff check` for static analysis. Full type pass = ruff passes.
+- `uv run pytest` is the test runner (pyproject.toml configures testpaths: tests)
+
+---
+
+## 2026-03-15 - US-001
+- Implemented: Added 0.0.0.0/8 and 100.64.0.0/10 to _BLOCKED_NETS; added IPv4-mapped IPv6 unwrap logic in check_url()
+- Files changed: security/ssrf_guard.py, tests/test_ssrf_guard.py (new)
+- **Learnings for future iterations:**
+  - mypy is not installed; ruff is the only static checker available
+  - Test pattern: patch socket.getaddrinfo with a list of tuples matching the getaddrinfo return shape — (family, type, proto, canonname, (ip, port))
+  - IPv6 getaddrinfo entries have a 4-tuple address: (ip, port, flowinfo, scope_id) — the mock must use a 4-element tuple for AF_INET6
+  - `ipaddress.IPv6Address.ipv4_mapped` returns None if the address is not ::ffff: prefixed
+---

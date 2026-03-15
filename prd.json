@@ -18,7 +18,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "SEC-C2 from audit. See security/ssrf_guard.py lines 9-18."
     },
     {
