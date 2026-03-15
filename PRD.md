@@ -1720,3 +1720,196 @@ OLLAMA_ORIGINS=https://tty-theme.dev ollama serve
 - [ ] For hosted API: anonymous free tier (N req/day) vs. API key required from day one?
 - [ ] Which local model should be recommended for best theme quality at minimal size? (candidates: `llama3:8b`, `mistral:7b`, `phi3:mini`)
 - [ ] BYOK-Local: should we ship a one-click CORS setup script for Ollama to reduce friction?
+
+
+---
+
+## 21. Code Audit — Multi-Agent Review (2026-03-15)
+
+Four specialized agents reviewed the codebase in parallel. Findings are logged here as the authoritative backlog for remediation work. Items marked **[FIXED]** have been resolved.
+
+---
+
+### 21.1 Security Audit
+
+**Reviewed by:** Security Auditor Agent  
+**Scope:** OWASP Top 10 (2021), input validation, secrets handling, auth, CORS
+
+#### Critical
+
+| ID | File | Lines | Issue |
+|----|------|-------|-------|
+| SEC-C1 | `security/ssrf_guard.py` + `image/loader.py` | 36–51, 51 | **DNS rebinding / TOCTOU** — `check_url()` resolves DNS once; `httpx.get()` re-resolves independently. Attacker-controlled DNS can return a safe IP on check then 169.254.169.254 on fetch. |
+| SEC-C2 | `security/ssrf_guard.py` | 9–18 | **SSRF blocklist gaps** — Missing `0.0.0.0/8`, `100.64.0.0/10` (CGNAT), and IPv4-mapped IPv6 (`::ffff:127.0.0.1`). Bypass via `https://0.0.0.0/` or `https://[::ffff:169.254.169.254]/`. |
+
+**Fixes:** SEC-C1: resolve DNS once, pass resolved IP to httpx via custom transport. SEC-C2: add missing ranges; check `ipaddress.ip_address(...).ipv4_mapped`.
+
+#### High
+
+| ID | File | Lines | Issue |
+|----|------|-------|-------|
+| SEC-H1 | `api/middleware.py` | 39–43 | **X-Forwarded-For spoofing** — rate limiter blindly trusts this header; any client gets a fresh bucket per request by rotating the header value. |
+| SEC-H2 | `api/middleware.py` | 34–35 | **In-process rate limit state** — lost on restart; ineffective across Cloud Run instances. Redis backend required (already in PRD §8). |
+| SEC-H3 | `api/middleware.py` | 34–35 | **Unbounded dict growth** — combined with H1, attacker can cause OOM DoS by creating unlimited unique buckets. |
+| SEC-H4 | `api/main.py` | 74–77 | **`/metrics` unauthenticated** — exposes provider names, error rates, latency histogram to public internet. |
+| SEC-H5 | `api/main.py` | 113–158 | **`/v1/generate` unauthenticated** — any internet client can consume LLM credits. No API key or OAuth enforcement. |
+| SEC-H6 | `cli/main.py` | 36–38 | **Path traversal in `--install`** — theme name like `../../.bashrc` written to arbitrary filesystem path. `replace(" ", "-")` does not strip `/` or `..`. |
+
+#### Medium
+
+| ID | File | Issue |
+|----|------|-------|
+| SEC-M1 | `api/main.py:54–60` | CORS: `allow_methods=["*"]` + `allow_headers=["*"]` with `allow_credentials=True` — overly permissive. |
+| SEC-M2 | `image/loader.py:51` | HTTP 3xx response not explicitly rejected; confusing error surface on redirect. |
+| SEC-M3 | `image/loader.py:16` | WEBP magic check matches any RIFF container (WAV, AVI). `b"\x00\x00\x00"` catch-all too broad. |
+| SEC-M4 | `security/input_sanitizer.py:13–44` | ASCII control characters (U+0000–U+001F) not stripped — log injection and LLM prompt injection risk. |
+| SEC-M5 | `security/input_sanitizer.py:27–44` | Docstring says raises `ValueError` on empty input; function silently returns `""`. Broken contract. |
+| SEC-M6 | `security/secrets.py:47` | `name` interpolated directly into Secret Manager path — no allowlist validation, path injection risk. |
+| SEC-M7 | `api/middleware.py:84–85` | `except Exception: pass` in audit log — audit failures are silent, creating monitoring blind spot. |
+| SEC-M8 | `api/main.py:120` | `DAILY_SPEND_CAP` env var parsed without validation — invalid string raises unhandled `ValueError`. |
+
+#### Low
+
+SEC-L1: local health checks scan localhost ports (info leak in shared hosting). SEC-L2: IP hash truncated to 64 bits (audit log collision risk). SEC-L3: `.env.*` gitignore pattern fragile — add explicit `!.env.example` negation. SEC-L4: no request body size limit on `/v1/generate`. SEC-L5: broad CLI `except Exception` may leak internal paths/stack traces to user.
+
+#### Positive Findings
+
+Parameterized SQL (no injection risk), JSON-only embeddings (no pickle), OS keychain for keys, HTTPS-only SSRF enforcement, redirects disabled, EXIF stripping, LLM output structural validation, system prompt injection hardening, gitignore coverage.
+
+---
+
+### 21.2 Performance Audit
+
+**Reviewed by:** Performance Engineer Agent  
+**Scope:** Concurrency, caching, DB access, image pipeline, startup latency
+
+#### High
+
+| ID | File | Lines | Issue |
+|----|------|-------|-------|
+| PERF-H1 | `api/main.py` | 114–158 | **Sync blocking in async endpoint** — `generate_from_prompt()` blocks the asyncio event loop (sync httpx, sync SQLite, sync k-means, sync MiniLM). Single request blocks all concurrency for 10–60s. Fix: change `async def` → `def` (FastAPI threads it) or wrap in `asyncio.to_thread()`. |
+| PERF-H2 | `cache/db.py` + `cache/embeddings.py` | 126–136, 37–62 | **O(N) full-table embedding scan** — every tier-2 cache miss fetches all theme rows, deserializes all JSON vectors, iterates cosine similarity in Python. Scales linearly with cache size. |
+| PERF-H3 | `cache/embeddings.py` | 11–17 | **Cold start: model loaded on first request** — `SentenceTransformer("all-MiniLM-L6-v2")` takes 2–5s. In Cloud Run, every cold start pays this cost on the first request. Pre-load in FastAPI lifespan startup. |
+| PERF-H4 | `providers/openai_compat.py` | 65–80 | **No HTTP connection reuse** — new TCP+TLS per LLM call. Adds 100–300ms per request. Fix: one `httpx.Client` per `OpenAICompatProvider` instance. |
+
+#### Medium
+
+| ID | File | Issue |
+|----|------|-------|
+| PERF-M1 | `cache/db.py:21–24` | New SQLite connection per operation — 5+ open/close cycles per request. |
+| PERF-M2 | `providers/registry.py:49–50` | Serial health checks, uncached — 3 local providers × 2s timeout = 6s dead wait when all are offline. |
+| PERF-M3 | `providers/registry.py:43–98` | Double health check — `resolve_provider()` and `generate_with_fallback()` each call `health_check()` independently. |
+| PERF-M4 | `image/loader.py:67–71` | EXIF strip via `list(img.getdata())` — materializes millions of Python tuples; 500MB+ peak memory on large images. Use `img.copy()` instead. |
+| PERF-M5 | `cache/firestore_db.py:108–121` | `get_all_embeddings` fetches entire Firestore `themes` collection including full `theme_data` — 20MB+ per cache miss at 10k themes. Use field mask / Firestore vector search. |
+| PERF-M6 | `cache/embeddings.py:56–58` | Cosine similarity computed one-at-a-time in Python loop. Vectorize with `query_vec @ matrix.T`. |
+| PERF-M7 | `api/middleware.py:34–35` | Rate limit `defaultdict` never evicted — slow memory leak under sustained unique-IP traffic. |
+| PERF-M8 | `cache/db.py:141–156` | `log_cost` SELECT + conditional INSERT/UPDATE — not atomic, wasted round-trips. Use SQLite UPSERT. |
+
+#### Low
+
+PERF-L1: `scikit-learn` (~150MB) used only for 16-cluster k-means on 150×150 image — consider `PIL.quantize()`. PERF-L2: `sentence-transformers` (~2GB PyTorch) listed as core dep, not optional — breaks `uv sync` for users who don't need embeddings. PERF-L3: Full-res image kept in memory through pHash + k-means — downsample once to 512×512 at pipeline start. PERF-L4: `follow_redirects=False` breaks legitimate CDN redirects (usability, not just security).
+
+---
+
+### 21.3 Bug Report
+
+**Reviewed by:** Debugger Agent  
+**Scope:** Logic errors, type mismatches, unhandled exceptions, incorrect API behavior
+
+#### Critical
+
+| ID | File | Lines | Bug |
+|----|------|-------|-----|
+| BUG-01 | `modes/prompt_mode.py` | 61, 73 | **Cache hit ignores `--target` format** — both tier-1 and tier-2 cache returns yield raw `theme_data` without re-serializing through the requested target serializer. `--target iterm2` with a Ghostty-format cache hit silently returns Ghostty format. The `serializer` variable is resolved but never used on cache-hit branches. |
+| BUG-02 | `cache/firestore_db.py` | 108 | **Firestore returns `str` IDs; callers expect `int`** — `get_all_embeddings()` returns `list[tuple[str, list[float]]]`; `find_similar()` returns the ID as `int | None`; `get_by_id()` expects `int`. Silent tier-2 cache miss on every API (Firestore) request. |
+
+#### High
+
+| ID | File | Lines | Bug |
+|----|------|-------|-----|
+| BUG-03 | `image/loader.py` | 15, 63 | RIFF magic check catches non-image RIFF files (WAV, AVI). `PIL.UnidentifiedImageError` (`OSError`) not caught — propagates as unhandled exception instead of documented `ValueError`. |
+| BUG-04 | `image/loader.py` | 51–52 | HTTP 3xx not handled — surfaces as confusing `HTTPStatusError` to user. |
+| BUG-05 | `image/extractor.py` | 18 | No defensive mode check — `reshape(-1, 3)` assumes RGB; no guard if called with non-RGB image. |
+| BUG-06 | `modes/image_mode.py` | 73 | Wrong prompt builder used for LLM refinement — uses `build_prompt()` (text-inspiration prompt) instead of `build_refine_prompt()` (palette-specific system prompt). Degrades refinement quality. |
+| BUG-07 | `api/middleware.py` | 55 | Rate limiter short-circuit — minute token consumed before hour bucket checked. If hour bucket exhausted, minute token is permanently burned. |
+| BUG-08 | `api/main.py` | 135, 145 | `tier_used` hardcoded: always `3` for prompt, always `1` for image, regardless of actual cache tier used. API response contract is misleading. |
+
+#### Medium
+
+| ID | File | Bug |
+|----|------|-----|
+| BUG-09 | `cache/db.py:141–156` | TOCTOU race in `log_cost` — concurrent requests can double-count costs. No UNIQUE constraint. |
+| BUG-10 | `security/input_sanitizer.py:41–42` | UTF-8 truncation on multi-byte boundary uses `errors="ignore"`, silently drops partial CJK/emoji characters. |
+| BUG-11 | `modes/prompt_mode.py:120` | Cost estimate hardcodes `* 0.5` (assumes 500 tokens). Actual token count never measured. Spend cap enforcement inaccurate. |
+| BUG-12 | `providers/openai_compat.py:79` | `raise_for_status()` loses API error response body — provider error detail (e.g. "model not found") discarded. |
+| BUG-13 | `cache/firestore_db.py:71–82` | Composite Firestore index on `(query_hash, created_at DESC)` required but not declared in `firestore.indexes.json`. Runtime `FailedPrecondition` exception unhandled. |
+| BUG-14 | `image/loader.py:16–17` | `b"\x00\x00\x00"` catch-all magic entry — any file starting with 3 null bytes passes type check. |
+| BUG-15 | `cli/main.py:129–130` | `list_themes(10000)` called twice in `config status` — once for display, once for count. |
+
+#### Low
+
+BUG-16: `GhosttySerializer.file_extension()` returns `".ghostty"` but `cli/main.py` installs with no extension — inconsistency will break if `file_extension()` is ever used at install time. BUG-17: Dead `tomli` conditional dep (`python_version < '3.11'`) unreachable given `requires-python = ">=3.11"`. BUG-18: Test `client` fixture is sync, yields async client — resource leak risk under `pytest-asyncio`. BUG-19: No `UNIQUE(query_hash)` constraint on `themes` table — concurrent requests can insert duplicates.
+
+---
+
+### 21.4 UI/UX Review
+
+**Reviewed by:** UI/UX Designer Agent  
+**Scope:** CLI ergonomics, onboarding flow, web mockup accessibility (WCAG AA), empty/loading/error states
+
+#### CLI — High
+
+| ID | Location | Issue |
+|----|----------|-------|
+| CLI-1 | `cli/main.py:55–57` | Error "provide --prompt or --image" gives no example or next step. First-time user is stranded. |
+| CLI-2 | `cli/main.py:71–73` | Broad `except Exception` collapses all errors to opaque message. No actionable guidance per error type. |
+| CLI-3 | `cli/main.py:63–69` | Zero progress feedback during LLM calls (2–15s). Process hangs silently. |
+| CLI-4 | `cli/main.py:77–82` | `--install` silently overwrites existing theme. No confirmation, no overwrite warning, no "how to activate" instruction post-install. |
+
+#### CLI — Medium
+
+CLI-5: Onboarding wizard doesn't mention local providers (Ollama etc.) — contradicts "local-first" positioning. CLI-6: `config status` output lacks visual separators, hard to scan. CLI-7: `search` output has no target format badge, source badge, or install hint. CLI-8: `--help` text too terse for `--target`, `--refine`, `--provider`. CLI-9: `seed` command is a hidden prerequisite — never auto-triggered, causing Tier 3 hits on first use.
+
+#### CLI — Low
+
+CLI-10: No blank line between theme output and install-path message when `--install` used. CLI-11: `search` uses positional argument, inconsistent with flag-based CLI convention.
+
+#### Web — High
+
+| ID | Location | Issue |
+|----|----------|-------|
+| WEB-1 | `mockup.html:229–265` | Generate button enabled before BYOK key entered — silent failure on submit. |
+| WEB-2 | `mockup.html:401, 452` | No loading state designed — no spinner, no progress steps, no disabled button during async generation (1–15s). |
+| WEB-3 | `mockup.html:411–458` | Drop zone missing `ondrop` handler; no keyboard (Enter/Space) alternative for file drop. |
+| WEB-4 | `mockup.html:303–326` | BYOK notice contradicts itself — says "never sent to server" then "passed ephemerally through server." Needs split notice per provider mode. |
+| WEB-5 | `mockup.html:59–63` | `Space Mono` applied globally — harms prose readability and WCAG 1.4.12 (Text Spacing) compliance for security notices and labels. |
+
+#### Web — Medium
+
+WEB-6: Header nav overflows on mobile (<600px) — no responsive collapse. WEB-7: `prefers-reduced-motion` only shortens animation duration, doesn't remove 3D tilt transform — still disorienting. WEB-8: Continuous `animate-pulse-green` on CTA button violates WCAG 2.2.2 (auto-playing motion >5s). WEB-9: "Cached themes" section label misleading; empty state undesigned. WEB-10: "Tier 3" label is internal pipeline language — replace with "new (generated)" / "cached". WEB-11: "Export video" button references nonexistent `tty-theme export-video` CLI command — trust-breaking. WEB-12: Palette swatch tooltips show only index number; no hex value, semantic name, or WCAG contrast indicator. WEB-13: "new query / regenerate / contribute" buttons have identical visual weight despite very different consequence. WEB-14: Gallery has no pagination or load-more design despite showing "247 themes".
+
+#### Web — Low
+
+WEB-15: Page `<title>` says "ghostty-theme" (wrong product name); GA4 ID is placeholder `G-XXXXXXXXXX`. WEB-16: Toast timeout (2500ms) too short for long install-path strings — WCAG 2.2.1 violation. WEB-17: Web install flow doesn't model error states, CLI-not-installed case, or post-install activation step.
+
+---
+
+### 21.5 Remediation Priority
+
+| Priority | ID | Category | Effort |
+|----------|----|----------|--------|
+| P0 | SEC-C1, SEC-C2 | Security | SSRF guard DNS rebinding + blocklist gaps |
+| P0 | BUG-01 | Bug | Cache hits silently return wrong format |
+| P0 | BUG-02 | Bug | Firestore ID type mismatch — breaks all tier-2 cache in API |
+| P1 | SEC-H1 through H6 | Security | Rate limit bypass, unauth endpoints, path traversal |
+| P1 | PERF-H1 | Performance | Sync blocking in async endpoint — fixes all concurrency |
+| P1 | PERF-H4 | Performance | HTTP connection reuse — 100–300ms per LLM call |
+| P1 | BUG-06 | Bug | Wrong prompt builder for image refinement |
+| P2 | PERF-H2, H3 | Performance | O(N) embedding scan + cold start model load |
+| P2 | SEC-M1 through M8 | Security | CORS, magic bytes, input sanitizer contract, audit logging |
+| P2 | BUG-03 through 08 | Bug | Image loader errors, rate limiter logic, API tier reporting |
+| P3 | CLI-1 through 4 | UX | Error messages, progress feedback, install flow |
+| P3 | WEB-1 through 5 | UX | Loading states, BYOK validation, drop zone, accessibility |
+| P4 | PERF-L2 | Performance | Move `sentence-transformers` to optional dependency |
+| P4 | Remaining medium/low | All | Per-category backlog above |
+
