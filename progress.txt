@@ -121,3 +121,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `time.monotonic()` is preferred over `time.time()` for TTL because it never goes backwards
   - Cache key should be `f"{name}:{base_url}"` not just `name` to handle hypothetical same-name different-URL providers
 ---
+
+## 2026-03-15 - US-013
+- Implemented: Cache always stores Ghostty format via `_CACHE_SERIALIZER = GhosttySerializer()`; tier-1/tier-2 hits call `validate_theme(cached_data)` → `serializer.serialize(palette)` for the requested target
+- Files changed: modes/prompt_mode.py, tests/test_prompt_mode.py
+- **Learnings for future iterations:**
+  - `validate_theme()` only understands Ghostty key=value format — cache must always store Ghostty (canonical), not the requested target format
+  - The LLM retry loop assigns `palette` inside the loop body; initialize `palette: dict[str, str] = {}` before the loop to avoid potential UnboundLocalError
+  - Existing test was seeding invalid theme data ("cached-result") — must use a valid Ghostty theme string; use `_VALID_THEME` fixture
+---

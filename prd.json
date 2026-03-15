@@ -203,7 +203,7 @@
         "Typecheck passes"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "BUG-01 from audit. Critical. modes/prompt_mode.py lines 61 and 73."
     },
     {
