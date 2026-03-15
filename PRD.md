@@ -1,10 +1,28 @@
 # Product Requirements Document
-## tty-theme: AI-Powered Terminal Theme Generator
+## tty-theme: AI Terminal Theme Generator — Ralph Implementation PRD
 
-**Version:** 0.4
+**Version:** 0.5
 **Status:** Draft
 **Author:** chruzcruz
 **Date:** 2026-03-14
+
+---
+
+## 0. Ralph Implementation Plan
+
+This document doubles as an executable implementation guide. Each phase is self-contained, testable, and deployable independently.
+
+| Phase | Name | Deliverable | Est. Effort |
+|-------|------|-------------|-------------|
+| 0 | Foundation | Repo scaffold, pyproject.toml, CI/CD pipeline, GCP project wiring | 1 day |
+| 1 | Core pipeline | Prompt + image generation, local serializers (Ghostty + iTerm2), SQLite cache | 2 days |
+| 2 | Provider system | Ollama, LM Studio, Gemini free tier, Claude Haiku adapters; keychain secret mgmt | 1 day |
+| 3 | Similarity search | MiniLM embeddings, cosine similarity, tiered cache (exact → similarity → LLM) | 1 day |
+| 4 | Web API | FastAPI app, Dockerize, deploy to Cloud Run, Firestore backend swap | 2 days |
+| 5 | Web UI | Firebase Hosting, static site (Vite + Tailwind, Space Mono), two-page flow | 2 days |
+| 6 | Community gallery | Publish/browse/like/share, Firebase Auth (GitHub OAuth), gallery API | 2 days |
+| 7 | Security hardening | SSRF guard, rate limiting, Secret Manager wiring, bandit/pip-audit CI gates | 1 day |
+| 8 | Launch | README, PyPI publish, SBOM, domain setup, monitoring alerts | 1 day |
 
 ---
 
@@ -357,95 +375,115 @@ API keys are **never written to `config.toml`**. They live exclusively in the OS
 
 SQLite is sufficient. Single-user, zero network overhead. Handles thousands of cached themes with sub-millisecond lookups.
 
-### 8.2 Production Architecture — Google Cloud (zero idle cost)
+### 8.2 Production Architecture — Google Cloud (Zero Idle Cost)
 
 **GCP Project:** `tinkerwithtech-214914`
-**Design principle:** every component scales to zero — no idle billing.
+**Region:** `us-central1`
+**Design principle:** Every component scales to zero. No idle billing.
 
 ```
-  User (browser / CLI)
-         │
-         ▼
-  ┌─────────────────────────┐
-  │   Firebase Hosting      │  Static web UI + CDN (free tier)
-  │   tty-theme.dev         │
-  └───────────┬─────────────┘
-              │ API calls
-              ▼
-  ┌─────────────────────────┐
-  │   Cloud Run             │  FastAPI container
-  │   (scales to zero)      │  min-instances=0, pay per request
-  └──────┬──────────────────┘
-         │
-    ┌────┴──────────────────────────────┐
-    │                                   │
-    ▼                                   ▼
-┌──────────────────┐        ┌──────────────────────┐
-│   Firestore      │        │  Vertex AI           │
-│  (Native DB +    │        │  Gemini Flash        │
-│   Vector Search) │        │  (pay per token)     │
-│                  │        └──────────────────────┘
-│  Collections:    │
-│  - themes        │        ┌──────────────────────┐
-│  - users         │        │  Secret Manager      │
-│  - likes         │        │  API keys, DB creds  │
-│  - rate_limits   │        └──────────────────────┘
-└──────────────────┘
-         │
-    ┌────▼──────────────────┐
-    │  Firebase Auth        │
-    │  (GitHub OAuth)       │
-    └───────────────────────┘
+User (browser / CLI)
+       │
+       ▼
+┌──────────────────────┐
+│  Firebase Hosting    │  Static web UI + global CDN (free tier)
+│  tty-theme.dev       │  Space Mono + Tailwind, Vite build
+└───────────┬──────────┘
+            │ /api/* requests
+            ▼
+┌──────────────────────────────┐
+│  Cloud Run                   │  FastAPI + uvicorn
+│  min-instances=0             │  Scales to 0 between requests
+│  256MB RAM, 1 vCPU           │  ~2s cold start acceptable
+│  max-concurrency=80          │
+└──────┬───────────────────────┘
+       │
+  ┌────┴────────────────────────────────────┐
+  │                                         │
+  ▼                                         ▼
+┌────────────────────┐          ┌──────────────────────┐
+│  Firestore         │          │  Gemini API (free)   │
+│  (Native DB +      │          │  generativelanguage  │
+│   Vector Search)   │          │  .googleapis.com     │
+│                    │          │                      │
+│  Collections:      │          │  gemini-2.0-flash-   │
+│  · themes          │          │  lite: FREE          │
+│  · community_      │          │  15 RPM free tier    │
+│    themes          │          │  1M tokens/day free  │
+│  · users           │          └──────────────────────┘
+│  · likes           │
+│  · rate_limits     │          ┌──────────────────────┐
+│  · cost_log        │          │  Secret Manager      │
+└────────────────────┘          │  GEMINI_API_KEY      │
+                                │  GITHUB_CLIENT_ID    │
+┌────────────────────┐          │  GITHUB_CLIENT_SECRET│
+│  Firebase Auth     │          └──────────────────────┘
+│  GitHub OAuth      │
+│  (free tier)       │          ┌──────────────────────┐
+└────────────────────┘          │  Artifact Registry   │
+                                │  Container images    │
+                                │  (Cloud Build CI/CD) │
+                                └──────────────────────┘
 ```
 
-**Enabled APIs (validated 2026-03-15):**
+**Enabled APIs on tinkerwithtech-214914 (validated 2026-03-15):**
 
-| API | Service | Status |
+| API | Purpose | Status |
 |-----|---------|--------|
-| `run.googleapis.com` | Cloud Run | ✓ enabled |
-| `firestore.googleapis.com` | Firestore | ✓ enabled |
-| `aiplatform.googleapis.com` | Vertex AI | ✓ enabled |
-| `secretmanager.googleapis.com` | Secret Manager | ✓ enabled |
-| `identitytoolkit.googleapis.com` | Firebase Auth | ✓ enabled |
-| `firebase.googleapis.com` | Firebase Hosting | ✓ enabled |
-| `cloudbuild.googleapis.com` | Cloud Build (CI/CD) | ✓ enabled |
-| `artifactregistry.googleapis.com` | Container Registry | ✓ enabled |
-| `monitoring.googleapis.com` | Cloud Monitoring | ✓ enabled |
+| `run.googleapis.com` | Cloud Run | ✓ |
+| `firestore.googleapis.com` | Database + vector search | ✓ |
+| `generativelanguage.googleapis.com` | Gemini free tier LLM | ✓ |
+| `aiplatform.googleapis.com` | Vertex AI (future paid path) | ✓ |
+| `secretmanager.googleapis.com` | Secret Manager | ✓ |
+| `identitytoolkit.googleapis.com` | Firebase Auth | ✓ |
+| `firebase.googleapis.com` | Firebase Hosting | ✓ |
+| `cloudbuild.googleapis.com` | CI/CD | ✓ |
+| `artifactregistry.googleapis.com` | Container registry | ✓ |
+| `monitoring.googleapis.com` | Observability | ✓ |
 
-**Why no Cloud SQL or Redis?**
-Both have a minimum idle cost (~$7–15/mo each) even with zero traffic. Firestore's `FindNearest` (cosine vector search, GA 2024) replaces pgvector. Firestore document counters replace Redis rate-limit buckets. Total idle cost = **$0**.
+**Free LLM Tier — Gemini API:**
 
-**Key scaling properties:**
-- Cloud Run: min-instances=0, scales on demand, 0→N in ~2s cold start.
-- Firestore: serverless, no provisioning, pays per read/write operation.
-- Vertex AI Gemini Flash: pay per token, no reserved capacity.
-- Rate limiting: Firestore counter doc per IP, TTL-expired via Cloud Run logic.
-- Similarity search: Firestore `FindNearest` with stored embedding vectors.
+| Model | Free quota | Use case |
+|-------|-----------|----------|
+| `gemini-2.0-flash-lite` | 30 RPM, 1M TPD | Default LLM for theme generation |
+| `gemini-1.5-flash` | 15 RPM, 1M TPD | Fallback / image refinement |
+| `text-embedding-004` | 1500 RPD | Local MiniLM preferred; Gemini embedding as cloud fallback |
 
-### 8.3 SQLite → Firestore Migration Path
+Access via: `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}`
+Key stored in: Secret Manager → `GEMINI_API_KEY`
+No Vertex AI ToS acceptance required. Free forever under quota.
 
-| Feature             | CLI (SQLite)                | Production (Firestore + Cloud Run) |
-|---------------------|-----------------------------|------------------------------------|
-| Theme cache         | SQLite                      | Firestore `themes` collection      |
-| Similarity search   | numpy cosine in-process     | Firestore `FindNearest` (cosine)   |
-| Rate limiting       | In-proc token bucket        | Firestore counter doc per IP       |
-| Embeddings          | JSON array in SQLite column | Firestore vector field             |
-| Spend tracking      | SQLite `cost_log`           | Firestore `cost_log` collection    |
-| Community themes    | N/A                         | Firestore `community_themes`       |
-| Likes               | N/A                         | Firestore `likes` sub-collection   |
+**Provider chain (updated):**
+```
+Ollama (local, free) →
+LM Studio (local, free) →
+Gemini 2.0 Flash Lite (cloud, FREE up to 1M tokens/day) →
+Claude Haiku (cloud, ~$0.001/query) →
+GPT-4o-mini (cloud, ~$0.001/query)
+```
 
-### 8.4 Estimated Monthly Cost (1k req/day)
+**Migration path: SQLite → Firestore**
+
+| Feature | CLI (SQLite) | Production (Firestore) |
+|---------|-------------|----------------------|
+| Theme cache | SQLite | `themes` collection |
+| Vector similarity | numpy cosine | `FindNearest` (cosine, GA 2024) |
+| Rate limiting | In-proc bucket | Firestore counter doc per IP |
+| Embeddings | JSON in TEXT col | Firestore vector field |
+| Community themes | N/A | `community_themes` collection |
+| Likes | N/A | `likes` sub-collection |
+
+**Monthly cost at 1k req/day:**
 
 | Service | Cost |
 |---------|------|
-| Cloud Run (1k req/day × 0.5s × 256MB) | ~$0.50 |
-| Firestore (reads/writes at scale) | ~$1–3 |
-| Vertex AI Gemini Flash (10% cache miss × 1k) | ~$1–3 |
+| Cloud Run (1k req × 0.5s × 256MB) | ~$0.50 |
+| Firestore ops | ~$1–2 |
+| Gemini API (within free quota) | **$0.00** |
 | Secret Manager (5 secrets) | ~$0.30 |
-| Firebase Hosting + CDN | Free tier |
-| Firebase Auth | Free tier |
-| Cloud Build (CI/CD) | Free tier (120 min/day) |
-| **Total** | **~$3–7/month** |
+| Firebase Hosting + Auth | Free |
+| Cloud Build CI/CD | Free (120 min/day) |
+| **Total** | **~$2–3/month** |
 
 ---
 
@@ -710,9 +748,9 @@ Each entry records `source`, `license` (MIT/CC0 only), and `author`. No propriet
 
 ---
 
-## 14. Community Theme Gallery
+## 16. Community Theme Gallery
 
-### 14.1 Overview
+### 16.1 Overview
 
 Users can publish generated or locally crafted themes to a public gallery hosted at the tty-theme website. Others can browse, search, download, like, and install themes directly from the gallery — without generating anything themselves.
 
@@ -735,7 +773,7 @@ tty-theme share "cyberpunk-neon-rain"
 
 ---
 
-### 14.2 Gallery Features
+### 16.2 Gallery Features
 
 | Feature              | Description                                                             |
 |----------------------|-------------------------------------------------------------------------|
@@ -751,7 +789,7 @@ tty-theme share "cyberpunk-neon-rain"
 
 ---
 
-### 14.3 Data Model Additions
+### 16.3 Data Model Additions
 
 #### `community_themes` table (server-side Postgres)
 ```sql
@@ -807,7 +845,7 @@ CREATE TABLE users (
 
 ---
 
-### 14.4 API Endpoints (Gallery)
+### 16.4 API Endpoints (Gallery)
 
 | Method | Path                              | Description                              | Auth       |
 |--------|-----------------------------------|------------------------------------------|------------|
@@ -824,7 +862,7 @@ Download increments `download_count` atomically via `UPDATE ... SET download_cou
 
 ---
 
-### 14.5 Sharing & Distribution
+### 16.5 Sharing & Distribution
 
 **Shareable URL:** `https://tty-theme.dev/t/<slug>`
 
@@ -842,7 +880,7 @@ tty-theme share "cyberpunk-neon-rain"
 
 ---
 
-### 14.6 Community Safety & Abuse Prevention
+### 16.6 Community Safety & Abuse Prevention
 
 | Risk                         | Mitigation                                                                 |
 |------------------------------|----------------------------------------------------------------------------|
@@ -857,7 +895,7 @@ tty-theme share "cyberpunk-neon-rain"
 
 ---
 
-### 14.7 Moderation
+### 16.7 Moderation
 
 - Flagged themes (`is_flagged = true`) are hidden from public listings but remain accessible by direct URL to the author.
 - Maintainer reviews flags manually. Automated: themes with ≥3 flags are auto-hidden pending review.
@@ -865,7 +903,7 @@ tty-theme share "cyberpunk-neon-rain"
 
 ---
 
-## 16. Milestones
+## 17. Milestones
 
 | Phase | Deliverable                                                               |
 |-------|---------------------------------------------------------------------------|
@@ -883,48 +921,139 @@ tty-theme share "cyberpunk-neon-rain"
 
 ---
 
-## 17. UI/UX Design
+## 18. Security Architecture
 
-### 17.1 Design System
+### 18.1 Threat Model Summary
 
-Generated via UI/UX Pro Max. Recommendations applied:
+| Layer | Threats | Controls |
+|-------|---------|----------|
+| Input — prompt | Injection, jailbreak, offensive content, cost amplification | Input sanitization, structural output validation, similarity dedup, blocklist |
+| Input — image | SSRF, malicious files, path traversal, ZIP bombs | SSRF guard, magic-byte check, size/dim caps, EXIF strip |
+| LLM | Prompt injection via user input, model hallucination | Labeled input field, structural parsing only, retry on deviation |
+| Auth | Account takeover, throwaway accounts | GitHub OAuth only, no email/password |
+| API keys | Leakage in logs, config, git, ps output | Secret Manager, keyring, log scrubber, git-secrets pre-commit hook |
+| Community | Spam, offensive slugs, like farming, scraping | Slug blocklist, fingerprint dedup, rate limits, Cloud Armor WAF |
+| Infrastructure | Misconfigured GCP permissions | Least-privilege IAM, Secret Manager for all credentials |
 
-| Token       | Value               | Rationale                                    |
-|-------------|---------------------|----------------------------------------------|
-| Font        | Space Mono 400/700  | Monospace throughout — reinforces terminal aesthetic |
-| Background  | `#0F172A` (slate-900) | Deep dark, reduces eye strain in terminal contexts |
-| Surface     | `#1E293B` (slate-800) | Cards/panels — clear depth without harsh contrast |
-| Border      | `#334155` (slate-700) | Subtle separators                            |
-| CTA/accent  | `#22C55E` (green-500) | "Run green" — universal terminal/CLI signal  |
-| AI accent   | `#818CF8` (indigo-400) | Semantic visual for AI/similarity results   |
-| Text        | `#F8FAFC`           | Near-white, passes 7:1 against `#0F172A`     |
+### 18.2 GCP IAM — Least Privilege
 
-Accessibility: all interactive elements have focus rings, ARIA roles, labels, and `aria-live` regions for dynamic content. `prefers-reduced-motion` respected.
+| Service Account | Role | Used by |
+|----------------|------|---------|
+| `tty-theme-api@...` | `roles/datastore.user` | Cloud Run → Firestore |
+| `tty-theme-api@...` | `roles/secretmanager.secretAccessor` | Cloud Run → Secret Manager |
+| `tty-theme-api@...` | `roles/monitoring.metricWriter` | Cloud Run → Cloud Monitoring |
+| `cloudbuild@...` | `roles/run.developer` | Cloud Build → Cloud Run deploy |
+| `cloudbuild@...` | `roles/artifactregistry.writer` | Cloud Build → push images |
 
-### 17.2 Page Structure
+No service account has `roles/owner` or `roles/editor`. Principle of least privilege enforced from day one.
 
-**Home page:**
-1. Header — logo, docs link, GitHub link
-2. Provider selector bar — Ollama / LM Studio / Claude / Gemini / Groq / GPT-4o-mini
-3. Input panel with two tabs:
-   - **Prompt tab** — text input (max 200 chars with live counter), suggestion chips, generate button
-   - **Image tab** — drag-and-drop zone, HTTPS URL input, optional context field, LLM refine toggle
-4. Cached themes grid — color strip preview, name, source, similarity score
-5. Status bar — cache size, active provider, spend today
+### 18.3 Secret Management
 
-**Results page:**
-1. Breadcrumb + metadata bar (provider used, cost, tier hit)
-2. Two-column layout:
-   - **Left:** Live terminal preview with syntax-highlighted mock output in the generated theme's colors + scanline effect
-   - **Right:** Raw theme config (copyable), 16-swatch palette grid (8 normal + 8 bright), semantic color indicators, contrast ratio badge
-3. Similar themes section — 3 cards with match score, source, one-click use
-4. Action strip — new query / regenerate / contribute theme
+All secrets in Secret Manager. Cloud Run accesses via mounted env vars (never baked into image):
 
-**Mockup file:** `mockup.html` (single-file, Tailwind CDN, fully interactive tab/view switching, no build step)
+```bash
+gcloud secrets create GEMINI_API_KEY --project=tinkerwithtech-214914
+gcloud secrets create GITHUB_CLIENT_ID --project=tinkerwithtech-214914
+gcloud secrets create GITHUB_CLIENT_SECRET --project=tinkerwithtech-214914
+
+# Grant Cloud Run service account access
+gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
+  --member="serviceAccount:tty-theme-api@tinkerwithtech-214914.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+### 18.4 CI/CD Security Gates
+
+Every PR and merge to `main` runs:
+```yaml
+# cloudbuild.yaml gates
+steps:
+  - pip-audit          # dependency CVE scan
+  - bandit -r .        # static security analysis
+  - ruff check .       # lint + S-rules (eval, exec, unsafe deserialization banned)
+  - pytest             # unit + integration tests
+  - docker build       # fail fast on build errors
+  # Only on merge to main:
+  - gcloud run deploy  # deploy to Cloud Run
+```
+
+### 18.5 Network Security
+
+- Cloud Run: all traffic over HTTPS (managed TLS by Google)
+- Firebase Hosting: HTTPS enforced, HSTS headers
+- Firestore: only accessible from Cloud Run service account (no public access)
+- Secret Manager: no public access, IAM-only
+- Cloud Armor WAF: rate limit 60 req/min per IP on Cloud Run ingress (phase 7)
 
 ---
 
-## 19. Open Questions
+## 19. UI/UX Design System
+
+*Generated via UI/UX Pro Max skill — confirmed for tty-theme community/developer tool profile.*
+
+### 19.1 Design Tokens
+
+| Token | Value | Rationale |
+|-------|-------|-----------|
+| Font (all) | Space Mono 400/700 | Monospace throughout — terminal aesthetic, no font pairing needed |
+| Background | `#0F172A` | Deep dark, reduces eye strain |
+| Surface | `#1E293B` | Cards/panels, clear depth |
+| Border | `#334155` | Subtle separators |
+| Muted text | `#64748B` | Secondary labels, metadata |
+| Primary text | `#F8FAFC` | Near-white, 7:1 contrast vs background |
+| CTA / accent | `#22C55E` | "Run green" — universal CLI signal |
+| AI accent | `#818CF8` | Similarity results, AI-generated badges |
+| Cyan | `#22D3EE` | iTerm2 target, image mode |
+| Amber | `#F59E0B` | Warnings, share actions |
+| Red | `#EF4444` | Errors, like hearts |
+
+### 19.2 Page Inventory
+
+| Page | Route | Description |
+|------|-------|-------------|
+| Home / Generator | `/` | Provider selector, terminal selector, prompt/image tabs, suggestion chips, cached themes grid |
+| Results | `/t/:slug/preview` | Terminal preview, 16-swatch palette, format toggle (Ghostty/iTerm2), copy/install/share actions, similar themes |
+| Community Gallery | `/browse` | Sort by downloads/likes/newest, filter by terminal, search, theme cards with stats |
+| Theme Detail | `/t/:slug` | Full theme page, shareable URL, one-click install command, social og:image |
+| Profile | `/u/:username` | User's published themes, stats |
+
+### 19.3 Component Library
+
+| Component | Notes |
+|-----------|-------|
+| ThemeCard | Color strip (8 swatches), name, author, target badges, download/like counts |
+| PaletteGrid | 8×2 swatch grid (normal + bright rows), hover shows hex + ANSI index |
+| TerminalPreview | Scanline effect, mock zsh output, live theme colors applied inline |
+| ProviderSelector | Radio pill group, auto-detects Ollama, green = active |
+| TargetSelector | Ghostty / iTerm2 pill toggle |
+| FormatToggle | Ghostty / iTerm2 output switch on results page |
+| SortBar | Downloads / Likes / Newest tabs + terminal filter + search input |
+| ShareToast | Copies `tty-theme.dev/t/:slug` to clipboard, 2.5s auto-dismiss |
+
+### 19.4 Accessibility Checklist
+
+- All interactive elements: `cursor-pointer`, visible `:focus-visible` ring (`#22C55E`)
+- ARIA roles on tablist/tab/tabpanel, radiogroup, listitem
+- `aria-live="polite"` on char counter, toast, dynamic results
+- `prefers-reduced-motion` collapses all animations to 0.01ms
+- Color contrast: all text ≥ 4.5:1 (body 7.1:1 verified)
+- No emojis as icons — SVG only (Heroicons/Lucide)
+- Responsive: 375px / 768px / 1024px / 1440px breakpoints
+
+### 19.5 Tech Stack (Frontend)
+
+| Layer | Choice | Rationale |
+|-------|--------|-----------|
+| Build tool | Vite | Fast HMR, small bundles |
+| CSS | Tailwind CSS v4 | Utility-first, tree-shaken |
+| Font | Space Mono (Google Fonts) | Single font, monospace throughout |
+| Icons | Lucide SVG | Consistent, accessible, no emoji |
+| Hosting | Firebase Hosting | Free CDN, HTTPS, `tty-theme.dev` |
+| State | Vanilla JS (MVP) → React (v2) | Keep it simple for launch |
+
+---
+
+## 20. Open Questions
 
 - [ ] License: MIT (recommended for max community adoption)?
 - [ ] Should we support light themes via a `--light` flag or auto-detect from query?
