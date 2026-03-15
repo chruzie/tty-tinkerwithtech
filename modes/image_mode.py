@@ -67,10 +67,9 @@ def generate_from_image(
     if refine and provider is not None:
         # B6: Optional LLM refinement pass
         from generator.llm import LLMClient, LLMError
-        from generator.prompt import build_prompt
+        from generator.prompt import build_refine_prompt
 
-        palette_str = "\n".join(f"{k} = {v}" for k, v in palette_dict.items())
-        prompt = build_prompt(f"Refine this extracted palette:\n{palette_str}")
+        prompt = build_refine_prompt(colors, user_description="")
         client = LLMClient()
         try:
             raw = client.generate(prompt, provider)
