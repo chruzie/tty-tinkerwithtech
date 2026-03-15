@@ -44,6 +44,17 @@ class OpenAICompatProvider(BaseProvider):
         self._api_key = api_key
         self.cost_per_1k_tokens = cost_per_1k
         self._is_local = is_local
+        self._client = httpx.Client(timeout=60.0)
+
+    def close(self) -> None:
+        """Release the underlying httpx connection pool."""
+        self._client.close()
+
+    def __del__(self) -> None:
+        try:
+            self._client.close()
+        except Exception:  # noqa: BLE001, S110
+            pass
 
     def _headers(self) -> dict[str, str]:
         h: dict[str, str] = {"Content-Type": "application/json"}
@@ -54,7 +65,7 @@ class OpenAICompatProvider(BaseProvider):
     def health_check(self) -> bool:
         if self._is_local:
             try:
-                r = httpx.get(f"{self._base_url}/models", timeout=2.0)
+                r = self._client.get(f"{self._base_url}/models", timeout=2.0)
                 return r.status_code == 200
             except Exception:
                 return False
@@ -62,7 +73,7 @@ class OpenAICompatProvider(BaseProvider):
         return bool(self._api_key)
 
     def generate(self, prompt: dict[str, str]) -> str:
-        resp = httpx.post(
+        resp = self._client.post(
             f"{self._base_url}/chat/completions",
             headers=self._headers(),
             json={
@@ -74,7 +85,6 @@ class OpenAICompatProvider(BaseProvider):
                 "temperature": 0.7,
                 "max_tokens": 1024,
             },
-            timeout=60.0,
         )
         resp.raise_for_status()  # raises HTTPStatusError (incl. 429) — caught by registry
         return resp.json()["choices"][0]["message"]["content"]
