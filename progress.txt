@@ -168,3 +168,11 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - Module-level constant (`_CACHE_SERIALIZER`) must be placed AFTER all imports to avoid E402; ruff enforces this strictly
   - The image mode also needed the canonical-cache fix (US-013 only fixed prompt_mode) — apply the pattern consistently
 ---
+
+## 2026-03-15 - US-018
+- Implemented: Added `typer.echo("searching cache...", err=True)` before provider resolution; `typer.echo(f"  generating via {provider.name}...", err=True)` after resolution
+- Files changed: cli/main.py
+- **Learnings for future iterations:**
+  - `typer.echo(..., err=True)` writes to stderr; piped output (`tty-theme generate ... > theme.conf`) only receives stdout
+  - `getattr(provider, 'name', 'unknown')` safely handles providers that might not have `.name` attribute
+---

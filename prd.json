@@ -279,7 +279,7 @@
         "Typecheck passes"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": "CLI-3 from UX audit. cli/main.py lines 63-69."
     },
     {
