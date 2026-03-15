@@ -63,8 +63,11 @@ def generate(
         raise typer.Exit(1)
 
     try:
+        typer.echo("searching cache...", err=True)
+
         from providers.registry import resolve_provider
         provider = resolve_provider(preferred=provider_name)
+        typer.echo(f"  generating via {getattr(provider, 'name', 'unknown')}...", err=True)
 
         if prompt:
             from modes.prompt_mode import generate_from_prompt
