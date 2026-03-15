@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import httpx
 from PIL import Image
 
 _MAX_BYTES = 20 * 1024 * 1024  # 20 MB
@@ -45,10 +44,9 @@ def load_image(source: str | Path) -> Image.Image:
             raise FileNotFoundError(f"Image not found: {path}")
         data = path.read_bytes()
     else:
-        from security.ssrf_guard import check_url
+        from security.ssrf_guard import safe_fetch
 
-        check_url(str(source))
-        resp = httpx.get(str(source), timeout=30.0, follow_redirects=False)
+        resp = safe_fetch(str(source), timeout=30.0, follow_redirects=False)
         resp.raise_for_status()
         data = resp.content
 

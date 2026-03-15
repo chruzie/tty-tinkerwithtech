@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import socket
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from security.ssrf_guard import check_url
+from security.ssrf_guard import check_url, safe_fetch
 
 
 def _mock_getaddrinfo(ip: str):
@@ -92,3 +92,41 @@ class TestSchemeValidation:
     def test_rejects_ftp(self):
         with pytest.raises(ValueError, match="Only https"):
             check_url("ftp://example.com/")
+
+
+class TestSafeFetch:
+    """safe_fetch must reject blocked IPs and not allow a second DNS lookup."""
+
+    def test_rejects_loopback_dns(self):
+        """safe_fetch raises ValueError when DNS resolves to 127.0.0.1 (DNS rebinding scenario)."""
+        loopback = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 0))]
+        with patch("socket.getaddrinfo", return_value=loopback):
+            with pytest.raises(ValueError, match="blocked address"):
+                safe_fetch("https://example.com/")
+
+    def test_rejects_private_dns(self):
+        """safe_fetch raises ValueError when DNS resolves to an RFC1918 address."""
+        private = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("192.168.1.100", 0))]
+        with patch("socket.getaddrinfo", return_value=private):
+            with pytest.raises(ValueError, match="blocked address"):
+                safe_fetch("https://example.com/")
+
+    def test_calls_httpx_with_resolved_ip(self):
+        """safe_fetch calls httpx.get with the IP-substituted URL, not the original hostname."""
+        public = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0))]
+        mock_response = MagicMock()
+
+        with patch("socket.getaddrinfo", return_value=public):
+            with patch("security.ssrf_guard.httpx") as mock_httpx:
+                mock_httpx.get.return_value = mock_response
+                result = safe_fetch("https://example.com/path")
+
+        mock_httpx.get.assert_called_once()
+        call_url = mock_httpx.get.call_args[0][0]
+        # The URL passed to httpx must contain the IP, not the hostname
+        assert "93.184.216.34" in call_url
+        assert "example.com" not in call_url
+        # Host header must be set to the original hostname
+        call_headers = mock_httpx.get.call_args[1]["headers"]
+        assert call_headers.get("Host") == "example.com"
+        assert result is mock_response
