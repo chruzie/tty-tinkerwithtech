@@ -1,5 +1,20 @@
 # tty-theme — Claude Code Context
 
+## Workflow Instructions (follow every session)
+
+1. **PRD-first:** Whenever the user requests a new feature, change, or design decision, **update `PRD.md` first** before touching any code or mockup. The PRD is the single source of truth. Add or modify the relevant section with full spec detail.
+
+2. **After updating the PRD**, always ask:
+   > "PRD updated. Do you want me to use Ralph to execute this phase now?"
+
+   Wait for the user's answer before proceeding to implement.
+
+3. **Mockup stays in sync:** After any PRD update, also reflect the change in `mockup.html` so it remains a live preview of the spec.
+
+4. **Commit after every meaningful change** with a descriptive message referencing the PRD version/section.
+
+---
+
 ## What This Project Is
 
 `tty-theme` is an open source CLI tool (and planned web UI) that generates terminal color themes from two input modes:

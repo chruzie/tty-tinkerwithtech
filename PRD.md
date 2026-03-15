@@ -1200,7 +1200,50 @@ HeroTerminal/
 └── ScanlineOverlay       # CSS pseudo-element, pointer-events: none
 ```
 
-#### 19.6.2 Remotion Video Export (MP4 / GIF — optional, CLI)
+#### 19.6.2 Neofetch-Style Theme Info Block
+
+`tty-theme` ships a `neofetch` subcommand that renders a styled info card directly in the terminal — showing the active theme's full palette, generation metadata, and system info in classic neofetch layout. It is also displayed in the web hero animation after every generation, serving as a viral screenshot moment.
+
+**CLI command:**
+```bash
+tty-theme neofetch                          # reads active ghostty theme
+tty-theme neofetch --theme cyberpunk-neon-rain   # explicit theme
+tty-theme neofetch --target iterm2          # read active iTerm2 profile
+```
+
+**Layout spec (two-column, terminal-rendered):**
+
+```
+  ╭────────╮
+  │  >_ ✦  │   chruz @ tty-theme
+  │  tty   │   ──────────────────────────────
+  │  theme │   Theme    cyberpunk neon rain
+  ╰────────╯   Target   ghostty  iterm2
+   v0.1.0      Provider gemini-2.0-flash-lite
+               Tier     generated · 1.4s
+               Cost     $0.00
+
+               ████████████████  ← palette 0–7  (normal)
+               ████████████████  ← palette 8–15 (bright)
+```
+
+| Element | Spec |
+|---------|------|
+| Left column | ASCII art box (`╭╮╰╯` box-drawing + `>_ ✦` prompt icon), 10 cols wide, colored with theme's `green` |
+| Right column | Key-value info rows; keys colored with theme's blue/cwd accent |
+| Separator | `──────────────────────────────` in `#334155` (muted, not distracting) |
+| Color blocks | `██` per palette entry, `color:` CSS / ANSI escape; row 1 = normal (0–7), row 2 = bright (8–15) |
+| Username | `chruz@tty-theme` — user's `$USER` + fixed `@tty-theme` hostname |
+
+**Terminal rendering (CLI):** Uses ANSI escape codes (`\033[38;2;R;G;Bm` true-color) so the color blocks are real terminal colors, not placeholders. Falls back to 256-color and 16-color for older terminals.
+
+**Web hero animation:** The neofetch block is built via DOM methods (no innerHTML) and appended after the generation output lines. Each theme cycle types `$ neofetch`, then fades in the info card with the live palette colors applied as CSS `color:`. This is the signature moment that makes the product's value immediately tangible.
+
+**Viral sharing mechanic:** The neofetch screenshot is the primary social sharing artifact — users post it on X/Mastodon/Bluesky with `#tty-theme`. The URL `tty-theme.dev/t/<slug>` is implicit in the card (visible in the Remotion video end card).
+
+---
+
+#### 19.6.3 Remotion Video Export (MP4 / GIF — optional, CLI)
 
 For social sharing on X/Twitter, LinkedIn, etc. Users can export a 10-second animated video of their theme being applied to the terminal.
 
@@ -1315,6 +1358,83 @@ A non-intrusive support link styled to match the terminal aesthetic. Displayed i
 
 ---
 
+### 6.5 BYOK-Local — Web UI Connecting to User's Local LLM
+
+Users who run Ollama, LM Studio, or llamafile on their own machine can point the **web UI** at their local model server. The browser makes the API call directly — the tty-theme server is never in the path.
+
+#### How It Works
+
+```
+User's browser (tty-theme.dev)
+        │
+        │  direct XHR/fetch to localhost
+        ▼
+User's local machine
+  ┌─────────────────────────────┐
+  │  Ollama   localhost:11434   │
+  │  LM Studio localhost:1234   │  ← user must supply base URL
+  │  llamafile localhost:8080   │
+  └─────────────────────────────┘
+```
+
+The browser sends the generation request directly to `http://localhost:<port>/v1/chat/completions`. **tty-theme's servers see nothing** — not the prompt, not the response, not the URL.
+
+#### Requirements
+
+| Requirement | Why |
+|-------------|-----|
+| User must configure their local server URL in the web UI settings | Browser cannot auto-discover localhost ports |
+| Local server must have CORS enabled for `tty-theme.dev` origin | Browsers block cross-origin requests without `Access-Control-Allow-Origin` |
+| Ollama: `OLLAMA_ORIGINS=https://tty-theme.dev` env var | Ollama's default CORS blocks external origins |
+| LM Studio: CORS toggle in server settings | LM Studio has a built-in CORS allow-list |
+| llamafile: `--allowed-origin https://tty-theme.dev` flag | llamafile passes the flag to llama.cpp server |
+
+#### Web UI Settings
+
+In the provider selector, a `Local LLM (BYOK)` option expands to:
+
+```
+Base URL:   [ http://localhost:11434 ▼ ]   ← editable, presets for Ollama/LMStudio/llamafile
+Model:      [ llama3:8b              ]   ← free text
+```
+
+Both values are stored in `localStorage` only (`tty-theme:local:baseUrl`, `tty-theme:local:model`). Never sent to the server.
+
+#### Security Disclaimer (displayed in web UI)
+
+> **⚠ Local LLM Connection**
+>
+> Your browser will connect directly to `http://localhost:<port>`. This means:
+> - Your local model server must have CORS enabled for `tty-theme.dev`
+> - Your prompt is sent from your browser to your local machine — not to tty-theme servers
+> - tty-theme cannot validate, debug, or support your local server configuration
+> - Only use on your own trusted machine; do not expose your local model server to untrusted networks
+>
+> [Setup guide →] links to docs for each local server type.
+
+#### CORS Setup Commands (shown in docs)
+
+```bash
+# Ollama — allow tty-theme.dev origin
+OLLAMA_ORIGINS=https://tty-theme.dev ollama serve
+
+# llamafile
+./llamafile --server --allowed-origin https://tty-theme.dev
+
+# LM Studio — enable CORS in Server → Settings → Allow CORS
+```
+
+#### Updated Provider Selector (Web UI)
+
+| Option | Key stored | Where request goes |
+|--------|-----------|-------------------|
+| Gemini (free · default) | none | Cloud Run → Gemini API |
+| Gemini (BYOK) | `localStorage:byok:gemini` | Browser → Gemini API |
+| Groq / OpenAI / Claude / Mistral | `localStorage:byok:<name>` | Browser → provider API |
+| Local LLM (BYOK-Local) | `localStorage:local:baseUrl + model` | Browser → `localhost:<port>` |
+
+---
+
 ## 20. Open Questions
 
 - [ ] License: MIT (recommended for max community adoption)?
@@ -1323,4 +1443,5 @@ A non-intrusive support link styled to match the terminal aesthetic. Displayed i
 - [ ] Do we want a `tty-theme contribute` command to submit themes back to the index?
 - [ ] Should image mode support clipboard paste as input?
 - [ ] For hosted API: anonymous free tier (N req/day) vs. API key required from day one?
-- [ ] Which local model should be recommended in docs for best theme quality at minimal size? (candidate: `llama3:8b`, `mistral:7b`, `phi3:mini`)
+- [ ] Which local model should be recommended for best theme quality at minimal size? (candidates: `llama3:8b`, `mistral:7b`, `phi3:mini`)
+- [ ] BYOK-Local: should we ship a one-click CORS setup script for Ollama to reduce friction?

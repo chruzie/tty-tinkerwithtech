@@ -112,6 +112,20 @@
 
     /* Palette strip transition */
     .palette-strip > div { transition: background-color 0.4s ease; }
+
+    /* Neofetch block layout */
+    .nf-block { display: flex; gap: 20px; align-items: flex-start; }
+    .nf-art {
+      flex-shrink: 0;
+      font-size: 0.7rem;
+      line-height: 1.45;
+      margin: 0;
+      white-space: pre;
+      font-family: 'Space Mono', monospace;
+    }
+    .nf-info { font-size: 0.72rem; line-height: 1.75; }
+    .nf-info .nf-key { font-weight: 700; }
+    .nf-colors { letter-spacing: 1px; margin-top: 3px; }
   </style>
 </head>
 <body class="min-h-screen antialiased">
@@ -243,9 +257,49 @@
             role="radio" aria-checked="false">
             Mistral
           </button>
+          <button onclick="selectProvider(this)" data-provider="local-llm" data-byok="false" data-local="true"
+            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-cyan hover:text-cyan"
+            role="radio" aria-checked="false">
+            Local LLM
+          </button>
         </div>
 
-        <!-- BYOK key input — shown when a non-default provider is selected -->
+        <!-- Local LLM config — shown when Local LLM is selected -->
+        <div id="local-llm-row" class="hidden mt-3">
+          <div class="border border-cyan/20 bg-cyan/5 rounded p-3 mb-2">
+            <p class="text-xs" style="color:#22D3EE;">
+              <strong>Local LLM</strong> — your browser connects directly to your Ollama / LM Studio / llamafile server.
+              tty-theme servers see <strong>nothing</strong>. You must enable CORS on your local server first.
+            </p>
+            <p class="text-xs mt-1.5" style="color:#475569;">
+              Ollama: <code class="text-cyan">OLLAMA_ORIGINS=https://tty-theme.dev ollama serve</code>
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <select id="local-preset" onchange="applyLocalPreset()" class="bg-surface border border-border rounded px-2 py-1.5 text-xs text-muted focus:outline-none focus:border-cyan/60 cursor-pointer">
+              <option value="http://localhost:11434">Ollama :11434</option>
+              <option value="http://localhost:1234">LM Studio :1234</option>
+              <option value="http://localhost:8080">llamafile :8080</option>
+              <option value="custom">custom...</option>
+            </select>
+            <input id="local-base-url" type="url" autocomplete="off"
+              value="http://localhost:11434"
+              class="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text focus:outline-none focus:border-cyan/60"
+              oninput="saveLocalConfig()" placeholder="http://localhost:11434" />
+          </div>
+          <div class="flex gap-2 mt-2">
+            <input id="local-model" type="text" autocomplete="off"
+              value="llama3:8b"
+              class="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text focus:outline-none focus:border-cyan/60"
+              oninput="saveLocalConfig()" placeholder="model name (e.g. llama3:8b)" />
+            <button onclick="testLocalConnection()" class="px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer hover:border-cyan hover:text-cyan transition-colors duration-200">
+              test
+            </button>
+          </div>
+          <p class="text-muted text-xs mt-1.5">Stored in <code class="text-cyan">localStorage</code> only — never sent to tty-theme servers.</p>
+        </div>
+
+        <!-- BYOK key input — shown when a cloud BYOK provider is selected -->
         <div id="byok-row" class="hidden mt-3">
           <div class="border border-amber/30 bg-amber/5 rounded p-3 mb-2">
             <p class="text-xs" style="color:#F59E0B">
@@ -536,10 +590,47 @@
                 <p class="term-line mt-1" style="animation-delay:0.7s;opacity:0;color:#57cc99;">  ✓ theme generated  1.4s</p>
                 <p class="term-line" style="animation-delay:0.8s;opacity:0;color:#57cc99;">  ✓ schema valid · contrast 7.2:1  WCAG AA</p>
                 <p class="term-line" style="animation-delay:0.9s;opacity:0;color:#57cc99;">  ✓ cached · written → ~/.config/ghostty/themes/cyberpunk-neon-rain</p>
-                <p class="term-line mt-3" style="animation-delay:1.0s;opacity:0;"><span style="color:#b5179e;">function</span> <span style="color:#4895ef;">greet</span><span style="color:#ced4da;">() {</span></p>
-                <p class="term-line" style="animation-delay:1.1s;opacity:0;"><span class="ml-4" style="color:#57cc99;">echo</span> <span style="color:#f4a261;">"hello, <span style="color:#4cc9f0;">cyberpunk</span>"</span></p>
-                <p class="term-line" style="animation-delay:1.15s;opacity:0;color:#ced4da;">}</p>
-                <p class="term-line mt-2" style="animation-delay:1.2s;opacity:0;"><span style="color:#4895ef;">~/projects</span> <span class="cursor" style="color:#ced4da;">$&nbsp;</span></p>
+                <!-- neofetch command -->
+                <p class="term-line mt-3" style="animation-delay:1.05s;opacity:0;">
+                  <span style="color:#4895ef;">~/projects</span>
+                  <span style="color:#57cc99;"> $ </span>
+                  <span style="color:#ced4da;">neofetch</span>
+                </p>
+                <!-- neofetch output block -->
+                <div class="term-line nf-block mt-1" style="animation-delay:1.25s;opacity:0;" aria-label="neofetch theme info">
+                  <!-- ASCII art -->
+                  <pre class="nf-art" style="color:#22C55E;">  ╭────────╮
+  │  &gt;_ ✦  │
+  │  tty   │
+  │  theme │
+  ╰────────╯
+  v0.1.0</pre>
+                  <!-- Info column -->
+                  <div class="nf-info">
+                    <p>
+                      <span class="nf-key" style="color:#22C55E;">chruz</span>
+                      <span style="color:#ced4da;">@</span>
+                      <span class="nf-key" style="color:#22C55E;">tty-theme</span>
+                    </p>
+                    <p style="color:#334155;">──────────────────────────────</p>
+                    <p><span class="nf-key" style="color:#4895ef;">Theme   </span><span style="color:#ced4da;"> cyberpunk neon rain</span></p>
+                    <p><span class="nf-key" style="color:#4895ef;">Target  </span><span style="color:#22C55E;"> ghostty</span><span style="color:#22D3EE;">  iterm2</span></p>
+                    <p><span class="nf-key" style="color:#4895ef;">Provider</span><span style="color:#ced4da;"> gemini-2.0-flash-lite</span></p>
+                    <p><span class="nf-key" style="color:#4895ef;">Tier    </span><span style="color:#ced4da;"> generated · 1.4s</span></p>
+                    <p><span class="nf-key" style="color:#4895ef;">Cost    </span><span style="color:#22C55E;"> $0.00</span></p>
+                    <!-- 16-color palette blocks (normal 0–7, bright 8–15) -->
+                    <p class="nf-colors">
+                      <span style="color:#1a1a2e;">██</span><span style="color:#e63946;">██</span><span style="color:#57cc99;">██</span><span style="color:#f4a261;">██</span><span style="color:#4895ef;">██</span><span style="color:#b5179e;">██</span><span style="color:#4cc9f0;">██</span><span style="color:#ced4da;">██</span>
+                    </p>
+                    <p class="nf-colors">
+                      <span style="color:#6c757d;">██</span><span style="color:#ff6b6b;">██</span><span style="color:#80ffdb;">██</span><span style="color:#ffd166;">██</span><span style="color:#74b9ff;">██</span><span style="color:#d63af9;">██</span><span style="color:#00f5d4;">██</span><span style="color:#ffffff;">██</span>
+                    </p>
+                  </div>
+                </div>
+                <!-- Prompt returns after neofetch -->
+                <p class="term-line mt-2" style="animation-delay:1.45s;opacity:0;">
+                  <span style="color:#4895ef;">~/projects</span> <span class="cursor" style="color:#ced4da;">$&nbsp;</span>
+                </p>
               </div>
               <!-- 16-color palette strip -->
               <div class="palette-strip h-2 flex" aria-hidden="true">
@@ -1054,19 +1145,22 @@ palette = 15=#ffffff</code></pre>
     const HERO_THEMES = [
       {
         label: 'cyberpunk neon rain',
-        bg: '#0d0d1a', cwd: '#4895ef', green: '#57cc99',
+        bg: '#0d0d1a', cwd: '#4895ef', green: '#57cc99', cyan: '#4cc9f0',
+        provider: 'gemini-2.0-flash-lite', tier: 'generated · 1.4s', cost: '$0.00',
         palette: ['#1a1a2e','#e63946','#57cc99','#f4a261','#4895ef','#b5179e','#4cc9f0','#ced4da',
                   '#6c757d','#ff6b6b','#80ffdb','#ffd166','#74b9ff','#d63af9','#00f5d4','#ffffff']
       },
       {
         label: 'tokyo midnight',
-        bg: '#1a1b26', cwd: '#7aa2f7', green: '#9ece6a',
+        bg: '#1a1b26', cwd: '#7aa2f7', green: '#9ece6a', cyan: '#7dcfff',
+        provider: 'ollama (llama3:8b)', tier: 'local · 0.8s', cost: '$0.00',
         palette: ['#1a1b26','#f7768e','#9ece6a','#e0af68','#7aa2f7','#bb9af7','#7dcfff','#a9b1d6',
                   '#414868','#f7768e','#9ece6a','#e0af68','#7aa2f7','#bb9af7','#7dcfff','#c0caf5']
       },
       {
         label: 'aurora borealis ice',
-        bg: '#0d1117', cwd: '#79c0ff', green: '#56d364',
+        bg: '#0d1117', cwd: '#79c0ff', green: '#56d364', cyan: '#56d4dd',
+        provider: 'similarity cache', tier: 'tier 2 · 0.01s', cost: '$0.00',
         palette: ['#0d1117','#f85149','#56d364','#e3b341','#79c0ff','#bc8cff','#56d4dd','#cdd9e5',
                   '#484f58','#ff7b72','#7ee787','#f0883e','#58a6ff','#d2a8ff','#39c5cf','#ffffff']
       }
@@ -1138,21 +1232,134 @@ palette = 15=#ffffff</code></pre>
       heroTypingTO = setTimeout(function() { done && done(); }, 1350);
     }
 
+    // Build neofetch DOM block safely — no innerHTML, all textContent
+    function buildNeofetch(theme) {
+      const ASCII_ART =
+        '  \u256d\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n' +
+        '  \u2502  >_ \u2726  \u2502\n' +
+        '  \u2502  tty   \u2502\n' +
+        '  \u2502  theme \u2502\n' +
+        '  \u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f\n' +
+        '   v0.1.0  ';
+
+      var wrap = document.createElement('div');
+      wrap.className = 'term-line nf-block mt-2';
+      wrap.style.opacity = '0';
+
+      // ASCII art column
+      var art = document.createElement('pre');
+      art.className = 'nf-art';
+      art.style.color = theme.green;
+      art.textContent = ASCII_ART;
+      wrap.appendChild(art);
+
+      // Info column
+      var info = document.createElement('div');
+      info.className = 'nf-info';
+
+      function mkSpan(text, color, bold) {
+        var s = document.createElement('span');
+        s.textContent = text;
+        if (color) s.style.color = color;
+        if (bold) s.style.fontWeight = '700';
+        return s;
+      }
+      function mkRow() {
+        var p = document.createElement('p');
+        for (var i = 0; i < arguments.length; i++) { p.appendChild(arguments[i]); }
+        return p;
+      }
+
+      // username@hostname
+      info.appendChild(mkRow(
+        mkSpan('chruz', theme.green, true),
+        mkSpan('@', '#ced4da'),
+        mkSpan('tty-theme', theme.green, true)
+      ));
+      // separator
+      var sep = document.createElement('p');
+      sep.textContent = '\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500';
+      sep.style.color = '#334155';
+      info.appendChild(sep);
+
+      // key-value rows
+      var rows = [
+        ['Theme   ', theme.label,            '#ced4da', null,         null],
+        ['Target  ', ' ghostty',             theme.green, '  iterm2', theme.cyan],
+        ['Provider', ' ' + theme.provider,   '#ced4da', null,         null],
+        ['Tier    ', ' ' + theme.tier,       '#ced4da', null,         null],
+        ['Cost    ', ' ' + theme.cost,       theme.green, null,       null],
+      ];
+      rows.forEach(function(r) {
+        var p = document.createElement('p');
+        p.appendChild(mkSpan(r[0], theme.cwd, true));
+        p.appendChild(mkSpan(r[1], r[2]));
+        if (r[3]) p.appendChild(mkSpan(r[3], r[4]));
+        info.appendChild(p);
+      });
+
+      // Color blocks: row 0–7, row 8–15
+      [theme.palette.slice(0, 8), theme.palette.slice(8, 16)].forEach(function(row) {
+        var p = document.createElement('p');
+        p.className = 'nf-colors';
+        row.forEach(function(color) {
+          var s = document.createElement('span');
+          s.textContent = '\u2588\u2588';
+          s.style.color = color;
+          p.appendChild(s);
+        });
+        info.appendChild(p);
+      });
+
+      wrap.appendChild(info);
+      return wrap;
+    }
+
+    function showNeofetch(theme, done) {
+      var out = document.getElementById('hero-output');
+      if (!out) { done && done(); return; }
+
+      // Prompt line: $ neofetch
+      var promptP = document.createElement('p');
+      promptP.className = 'term-line mt-2';
+      promptP.style.opacity = '0';
+      var cwdS = document.createElement('span');
+      cwdS.textContent = '~/projects ';
+      cwdS.style.color = theme.cwd;
+      var cmdS = document.createElement('span');
+      cmdS.textContent = '$ neofetch';
+      cmdS.style.color = '#F8FAFC';
+      promptP.appendChild(cwdS);
+      promptP.appendChild(cmdS);
+      out.appendChild(promptP);
+      requestAnimationFrame(function() { promptP.style.animation = 'lineAppear 0.18s ease forwards'; });
+
+      // Neofetch block after short delay
+      heroTypingTO = setTimeout(function() {
+        var block = buildNeofetch(theme);
+        out.appendChild(block);
+        requestAnimationFrame(function() { block.style.animation = 'lineAppear 0.35s ease forwards'; });
+        if (done) heroTypingTO = setTimeout(done, 1800);
+      }, 350);
+    }
+
     function runHeroCycle() {
-      const theme = HERO_THEMES[heroThemeIdx];
-      const out = document.getElementById('hero-output');
-      const el = document.getElementById('hero-typed');
-      const cursor = document.getElementById('hero-cursor');
+      var theme = HERO_THEMES[heroThemeIdx];
+      var out = document.getElementById('hero-output');
+      var el = document.getElementById('hero-typed');
+      var cursor = document.getElementById('hero-cursor');
       if (out) { while (out.firstChild) out.removeChild(out.firstChild); }
       if (el) el.textContent = '';
       if (cursor) cursor.style.display = 'inline';
       applyHeroTheme(theme);
       typeHeroPrompt(theme, function() {
         showHeroOutput(theme, function() {
-          heroTypingTO = setTimeout(function() {
-            heroThemeIdx = (heroThemeIdx + 1) % HERO_THEMES.length;
-            runHeroCycle();
-          }, 2200);
+          showNeofetch(theme, function() {
+            heroTypingTO = setTimeout(function() {
+              heroThemeIdx = (heroThemeIdx + 1) % HERO_THEMES.length;
+              runHeroCycle();
+            }, 2000);
+          });
         });
       });
     }
@@ -1202,8 +1409,24 @@ palette = 15=#ffffff</code></pre>
       const provider = btn.dataset.provider;
       const needsBYOK = btn.dataset.byok === 'true';
       const byokRow = document.getElementById('byok-row');
+      const localRow = document.getElementById('local-llm-row');
       const byokInput = document.getElementById('byok-key-input');
       const byokLabel = document.getElementById('byok-provider-label');
+
+      // Always hide both first
+      if (localRow) localRow.classList.add('hidden');
+
+      if (btn.dataset.local === 'true') {
+        byokRow.classList.add('hidden');
+        localRow.classList.remove('hidden');
+        // Restore saved values
+        var savedUrl = localStorage.getItem('tty-theme:local:baseUrl');
+        var savedModel = localStorage.getItem('tty-theme:local:model');
+        if (savedUrl) document.getElementById('local-base-url').value = savedUrl;
+        if (savedModel) document.getElementById('local-model').value = savedModel;
+        document.getElementById('status-provider').textContent = 'local-llm';
+        return;
+      }
 
       if (needsBYOK) {
         byokRow.classList.remove('hidden');
@@ -1219,6 +1442,22 @@ palette = 15=#ffffff</code></pre>
       }
 
       document.getElementById('status-provider').textContent = needsBYOK ? `${provider} (BYOK)` : provider;
+    }
+
+    function applyLocalPreset() {
+      var sel = document.getElementById('local-preset');
+      var urlInput = document.getElementById('local-base-url');
+      if (sel.value !== 'custom') { urlInput.value = sel.value; saveLocalConfig(); }
+    }
+    function saveLocalConfig() {
+      var url = document.getElementById('local-base-url').value;
+      var model = document.getElementById('local-model').value;
+      if (url) localStorage.setItem('tty-theme:local:baseUrl', url);
+      if (model) localStorage.setItem('tty-theme:local:model', model);
+    }
+    function testLocalConnection() {
+      var url = document.getElementById('local-base-url').value;
+      showToast('testing ' + url + '/v1/models ...');
     }
 
     function saveBYOKKey() {
