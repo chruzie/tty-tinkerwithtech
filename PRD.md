@@ -1,7 +1,7 @@
 # Product Requirements Document
 ## tty-theme: AI Terminal Theme Generator — Ralph Implementation PRD
 
-**Version:** 0.6
+**Version:** 0.9
 **Status:** Draft
 **Author:** chruzcruz
 **Date:** 2026-03-15
@@ -12,18 +12,34 @@
 
 This document doubles as an executable implementation guide. Each phase is self-contained, testable, and deployable independently.
 
+> **v0.9 constraint:** No real GCP infrastructure is deployed during development.
+> All GCP services are emulated locally via **Firebase Emulator Suite** (Firestore, Auth, Hosting)
+> and **Docker Compose** (Cloud Run). Actual cloud deploy commands are documented in `DEPLOY.md`
+> for future use only.
+
 | Phase | Name | Deliverable | Est. Effort | Status |
 |-------|------|-------------|-------------|--------|
-| 0 | Foundation | Repo scaffold, pyproject.toml, CI/CD pipeline, GCP project wiring | 1 day | ✓ done |
+| 0 | Foundation | Repo scaffold, pyproject.toml, CI/CD pipeline | 1 day | ✓ done |
 | 1 | Core pipeline | CLI entrypoint, prompt + image modes, Ghostty + iTerm2 serializers, SQLite cache | 2 days | ← **next** |
 | 2 | Provider system | Ollama, LM Studio, Gemini free tier, Claude Haiku adapters; keychain secret mgmt | 1 day | |
 | 3 | Similarity search | MiniLM embeddings, cosine similarity, tiered cache (exact → similarity → LLM) | 1 day | |
-| 4 | Local web server | FastAPI app (`api/`), local SQLite backend, CORS, static file serving | 1 day | |
-| 5 | Web UI (local) | Convert mockup.html → Vite + Tailwind build, wire to local API, live preview | 2 days | |
-| 6 | Community gallery | Publish/browse/like/share, Firebase Auth (GitHub OAuth), gallery API | 2 days | |
-| 7 | Cloud deploy | Dockerize, Cloud Run deploy, Firestore backend swap, Secret Manager | 2 days | |
-| 8 | Security hardening | Rate limiting, Secret Manager wiring, bandit/pip-audit CI gates, Cloud Armor | 1 day | |
-| 9 | Launch | README, PyPI publish, SBOM, domain setup, monitoring alerts | 1 day | |
+| 4 | Local emulator env | Docker Compose + Firebase Emulator Suite (Firestore, Auth, Hosting, Prometheus) | 0.5 day | |
+| 5 | Web API (local) | FastAPI app wired to local Firestore emulator, rate limiting, audit log | 1 day | |
+| 6 | Web UI (local) | Vite + Tailwind build, served by Hosting emulator, wired to local API | 2 days | |
+| 7 | Community gallery | Publish/browse/like/share, Firebase Auth emulator, gallery API | 2 days | |
+| 8 | Security hardening | Rate limiting, env-var secret abstraction (Secret Manager-ready), bandit/pip-audit CI | 1 day | |
+| 9 | Launch | README, PyPI publish, SBOM, DEPLOY.md for production GCP wiring | 1 day | |
+
+### Local GCP Emulator Map
+
+| GCP Service | Local Emulator | Port | How to start |
+|-------------|----------------|------|--------------|
+| Firestore | Firebase Emulator Suite | 8080 | `firebase emulators:start --only firestore` |
+| Firebase Auth | Firebase Emulator Suite | 9099 | `firebase emulators:start --only auth` |
+| Firebase Hosting | Firebase Emulator Suite | 5000 | `firebase emulators:start --only hosting` |
+| Cloud Run | Docker Compose | 8000 | `docker compose up api` |
+| Secret Manager | `.env` file + `python-dotenv` | n/a | `cp .env.example .env` |
+| Cloud Monitoring | Prometheus (Docker Compose) | 9090 | `docker compose --profile monitoring up` |
 
 ### Phase 0 — Already Scaffolded (✓)
 
