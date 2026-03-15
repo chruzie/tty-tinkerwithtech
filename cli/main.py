@@ -59,14 +59,32 @@ def generate(
 ) -> None:
     """Generate a terminal colour theme."""
     if not prompt and not image:
-        typer.echo("Error: provide --prompt or --image.", err=True)
+        typer.echo(
+            "Error: at least one input is required.\n"
+            "\n"
+            "  tty-theme generate --prompt 'tokyo midnight'\n"
+            "  tty-theme generate --image ./photo.jpg\n"
+            "\n"
+            "Run tty-theme generate --help for all options.",
+            err=True,
+        )
         raise typer.Exit(1)
 
     try:
         typer.echo("searching cache...", err=True)
 
         from providers.registry import resolve_provider
-        provider = resolve_provider(preferred=provider_name)
+
+        try:
+            provider = resolve_provider(preferred=provider_name)
+        except RuntimeError:
+            typer.echo(
+                "No LLM provider available. Run tty-theme config setup to add an API key, "
+                "or start Ollama with: ollama serve",
+                err=True,
+            )
+            raise typer.Exit(1) from None
+
         typer.echo(f"  generating via {getattr(provider, 'name', 'unknown')}...", err=True)
 
         if prompt:
@@ -77,6 +95,8 @@ def generate(
             src = str(image) if image else ""
             theme_str, _ = generate_from_image(src, target=target, refine=refine, provider=provider)
 
+    except (typer.Exit, SystemExit):
+        raise
     except Exception as exc:  # noqa: BLE001
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from None
