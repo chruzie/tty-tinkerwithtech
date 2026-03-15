@@ -130,3 +130,13 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - The LLM retry loop assigns `palette` inside the loop body; initialize `palette: dict[str, str] = {}` before the loop to avoid potential UnboundLocalError
   - Existing test was seeding invalid theme data ("cached-result") — must use a valid Ghostty theme string; use `_VALID_THEME` fixture
 ---
+
+## 2026-03-15 - US-014
+- Implemented: Replaced `build_prompt(f"Refine...")` with `build_refine_prompt(colors, user_description="")` in `modes/image_mode.py`; removed `build_prompt` import from refine block
+- Files changed: modes/image_mode.py, tests/test_image_mode.py (new)
+- **Learnings for future iterations:**
+  - `build_refine_prompt` is in `generator.prompt` — import it from there; `build_prompt` is also there but serves a different purpose
+  - `extract_palette()` returns `list[str]` of `#RRGGBB` hex strings — exactly what `build_refine_prompt(color_list, ...)` expects
+  - To patch module-level imports in tests use `patch("modes.image_mode.load_image", ...)` not `patch("image.loader.load_image")` — patch where it's imported, not where it's defined
+  - The image mode test is slow (~27s) without mocking because sklearn MiniBatchKMeans runs on real pixel data; always mock `extract_palette` in unit tests
+---
