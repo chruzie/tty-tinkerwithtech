@@ -66,3 +66,13 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - Use `patch("api.middleware._minute_buckets", TTLCache(...))` (patch the module attribute) to isolate TTLCache state per test
   - `uv add cachetools` updates pyproject.toml and uv.lock; uv.lock is gitignored in this project so only pyproject.toml needs committing
 ---
+
+## 2026-03-15 - US-007
+- Implemented: Added `_strip_control_chars()` helper to remove Unicode Cc/Cf category chars (except tab/newline/CR); added `ValueError` raise after whitespace collapse when result is empty
+- Files changed: security/input_sanitizer.py, tests/test_input_sanitizer.py (new)
+- **Learnings for future iterations:**
+  - Control char filtering must happen before NFKC normalization so characters that map to printable chars survive normalization
+  - `unicodedata.category(ch)` returns two-letter codes: `Cc` = C0/C1 control (null, ESC, etc.), `Cf` = format chars (zero-width space, BOM, etc.)
+  - Preserve `\t`, `\n`, `\r` (all Cc) so tabs and newlines pass through — they get collapsed to single space by the whitespace regex anyway
+  - The empty-check must come *after* whitespace collapse so a prompt of only spaces also raises ValueError
+---
