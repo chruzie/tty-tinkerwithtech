@@ -1,7 +1,7 @@
 # Product Requirements Document
 ## tty-theme: AI Terminal Theme Generator — Ralph Implementation PRD
 
-**Version:** 0.9
+**Version:** 1.0
 **Status:** Draft
 **Author:** chruzcruz
 **Date:** 2026-03-15
@@ -29,6 +29,21 @@ This document doubles as an executable implementation guide. Each phase is self-
 | 7 | Community gallery | Publish/browse/like/share, Firebase Auth emulator, gallery API | 2 days | |
 | 8 | Security hardening | Rate limiting, env-var secret abstraction (Secret Manager-ready), bandit/pip-audit CI | 1 day | |
 | 9 | Launch | README, PyPI publish, SBOM, DEPLOY.md for production GCP wiring | 1 day | |
+| 10 | Terraform IaC | Terraform modules provisioning all GCP infra; local-validate without apply | 1 day | ← **new** |
+
+### Phase 10 — Terraform IaC Strategy
+
+All GCP resources are defined in `terraform/`. The stack is **locally testable** via `terraform validate` + `terraform plan` (no `terraform apply` runs in dev). 1:1 parity: the same `.tf` files that run locally with `terraform plan` are the ones that provision real GCP.
+
+| Terraform Module | GCP Resource | Local test |
+|-----------------|-------------|-----------|
+| `terraform/modules/artifact_registry` | Artifact Registry repo for Docker images | `plan` only |
+| `terraform/modules/cloud_run` | Cloud Run service (API) | `plan` only |
+| `terraform/modules/firestore` | Firestore database + indexes | `plan` only |
+| `terraform/modules/secret_manager` | Secret Manager secrets (names only, no values) | `plan` only |
+| `terraform/modules/iam` | Service account + IAM bindings (least privilege) | `plan` only |
+| `terraform/modules/monitoring` | Cloud Monitoring alert policies | `plan` only |
+| `terraform/` root | Wires all modules, GCS remote state backend | `terraform init -backend=false && plan` |
 
 ### Local GCP Emulator Map
 

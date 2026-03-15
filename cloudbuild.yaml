@@ -43,7 +43,18 @@ steps:
         uv sync --frozen --extra dev --extra api
         uv run pytest -q
 
-  # 5. Docker build (validates Dockerfile, does NOT push)
+  # 5. Terraform validate (no apply — local validate only)
+  - name: "hashicorp/terraform:1.6"
+    entrypoint: sh
+    dir: terraform
+    args:
+      - -c
+      - |
+        terraform init -backend=false
+        terraform validate
+        terraform fmt -check
+
+  # 6. Docker build (validates Dockerfile, does NOT push)
   - name: "gcr.io/cloud-builders/docker"
     args: ["build", "-t", "tty-theme-api:$SHORT_SHA", "."]
 

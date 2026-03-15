@@ -50,6 +50,13 @@ secrets.toml
 .firebase/
 .firebaserc.local
 
+# Terraform state and overrides (never commit)
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/*.tfvars
+terraform/.terraform.lock.hcl
+
 # Web build output
 web/node_modules/
 web/dist/

@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars and fill in values.
+# terraform.tfvars is gitignored — never commit it.
+
+project_id  = "tinkerwithtech-214914"
+region      = "us-central1"
+environment = "production"
+app_name    = "tty-theme"
+alert_email = "you@example.com"
+image_tag   = "latest"

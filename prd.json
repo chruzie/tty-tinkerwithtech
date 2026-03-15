@@ -1,7 +1,7 @@
 {
   "project": "tty-theme",
   "branchName": "ralph/tty-theme-local-first",
-  "description": "tty-theme \u2014 AI terminal theme generator. Full implementation with local-first GCP emulation: Firebase Emulator Suite (Firestore, Auth, Hosting) + Docker Compose replaces all gcloud/firebase deploy commands. No real GCP infra touched during development.",
+  "description": "tty-theme \u2014 AI terminal theme generator. Full implementation with local-first GCP emulation: Firebase Emulator Suite (Firestore, Auth, Hosting) + Docker Compose replaces all gcloud/firebase deploy commands. No real GCP infra touched during development. Terraform IaC for all GCP resources (validate/plan locally, apply for production).",
   "userStories": [
     {
       "id": "US-001",
@@ -827,6 +827,136 @@
       "priority": 48,
       "passes": false,
       "notes": "LOCAL: No GCP Monitoring deployed. Prometheus local stack for development observability. GCP alerts documented in DEPLOY.md for future use."
+    },
+    {
+      "id": "US-049",
+      "title": "Terraform root module \u2014 providers, backend, variables",
+      "description": "As a developer, I need the Terraform root module so all GCP resources are defined as code and can be validated locally without applying.",
+      "acceptanceCriteria": [
+        "terraform/ directory with: main.tf, variables.tf, outputs.tf, versions.tf, terraform.tfvars.example",
+        "versions.tf: terraform required_version >=1.6; required_providers google>=5.0, google-beta>=5.0",
+        "variables.tf: project_id, region (default us-central1), environment (default development), app_name (default tty-theme)",
+        "main.tf: google provider configured with project=var.project_id, region=var.region",
+        "GCS backend block in main.tf with bucket=tty-theme-tfstate, prefix=terraform/state (backend=false for local validate)",
+        "terraform.tfvars.example: project_id=tinkerwithtech-214914, region=us-central1, environment=production",
+        "'terraform init -backend=false && terraform validate' passes with no errors",
+        "README section in DEPLOY.md: 'cd terraform && terraform init && terraform plan -var-file=terraform.tfvars'"
+      ],
+      "priority": 49,
+      "passes": false,
+      "notes": "LOCAL: Run 'terraform init -backend=false && terraform validate && terraform plan' \u2014 no apply."
+    },
+    {
+      "id": "US-050",
+      "title": "Terraform \u2014 Artifact Registry and Cloud Build IAM",
+      "description": "As a developer, I need Artifact Registry provisioned so Docker images have a home and Cloud Build can push to it.",
+      "acceptanceCriteria": [
+        "terraform/modules/artifact_registry/main.tf: google_artifact_registry_repository resource, format=DOCKER, location=var.region, repository_id=tty-theme-api",
+        "terraform/modules/artifact_registry/variables.tf: project_id, region, repository_id",
+        "terraform/modules/artifact_registry/outputs.tf: repository_url output (used by Cloud Run module)",
+        "Cloud Build SA binding: roles/artifactregistry.writer granted to cloudbuild SA",
+        "Module called from root main.tf",
+        "'terraform validate' passes"
+      ],
+      "priority": 50,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-051",
+      "title": "Terraform \u2014 IAM service account (least privilege)",
+      "description": "As a developer, I need the tty-theme-api service account with only the roles it needs.",
+      "acceptanceCriteria": [
+        "terraform/modules/iam/main.tf: google_service_account resource name=tty-theme-api",
+        "IAM bindings: roles/datastore.user, roles/secretmanager.secretAccessor, roles/monitoring.metricWriter \u2014 nothing broader",
+        "terraform/modules/iam/outputs.tf: service_account_email output",
+        "Module called from root main.tf",
+        "'terraform validate' passes"
+      ],
+      "priority": 51,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-052",
+      "title": "Terraform \u2014 Secret Manager (secret names, no values)",
+      "description": "As a developer, I need Secret Manager secrets declared in Terraform so names are consistent between IaC and application code.",
+      "acceptanceCriteria": [
+        "terraform/modules/secret_manager/main.tf: google_secret_manager_secret resources for GEMINI_API_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET",
+        "replication.auto{} block on each secret (not manual, for simplicity)",
+        "Secret *versions* (actual values) are NOT in Terraform \u2014 values set manually via gcloud or CI",
+        "terraform/modules/secret_manager/outputs.tf: secret_ids map output",
+        "Module called from root main.tf",
+        "'terraform validate' passes"
+      ],
+      "priority": 52,
+      "passes": false,
+      "notes": "Values are never in Terraform state. Only the secret resource shells are managed."
+    },
+    {
+      "id": "US-053",
+      "title": "Terraform \u2014 Firestore database",
+      "description": "As a developer, I need Firestore provisioned so the production database exists before the API starts.",
+      "acceptanceCriteria": [
+        "terraform/modules/firestore/main.tf: google_firestore_database resource, type=FIRESTORE_NATIVE, location_id=nam5",
+        "terraform/modules/firestore/variables.tf: project_id, location_id",
+        "google_project_service to enable firestore.googleapis.com",
+        "Module called from root main.tf",
+        "'terraform validate' passes"
+      ],
+      "priority": 53,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-054",
+      "title": "Terraform \u2014 Cloud Run service",
+      "description": "As a developer, I need the Cloud Run service defined in Terraform so the API deployment is reproducible.",
+      "acceptanceCriteria": [
+        "terraform/modules/cloud_run/main.tf: google_cloud_run_v2_service resource",
+        "Container image: var.image_url (populated from Artifact Registry output)",
+        "Env vars: ENVIRONMENT=production, GCP_PROJECT=var.project_id, FIRESTORE_PROJECT=var.project_id",
+        "Secret env vars via volumes: GEMINI_API_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET from Secret Manager",
+        "scaling: min_instance_count=0, max_instance_count=10; resources: limits cpu=1, memory=256Mi",
+        "service_account from IAM module output",
+        "google_cloud_run_v2_service_iam_member: allUsers gets roles/run.invoker (public API)",
+        "terraform/modules/cloud_run/outputs.tf: service_url output",
+        "Module called from root main.tf, depends_on iam and secret_manager modules",
+        "'terraform validate' passes"
+      ],
+      "priority": 54,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-055",
+      "title": "Terraform \u2014 Cloud Monitoring alerts",
+      "description": "As a developer, I need Cloud Monitoring alert policies in Terraform so SLOs are enforced from day one.",
+      "acceptanceCriteria": [
+        "terraform/modules/monitoring/main.tf: google_monitoring_alert_policy for p99 latency >5s, error rate >5%, daily Gemini spend >$5",
+        "google_monitoring_notification_channel resource: email type, var.alert_email",
+        "terraform/modules/monitoring/variables.tf: project_id, alert_email, service_name",
+        "Module called from root main.tf",
+        "'terraform validate' passes"
+      ],
+      "priority": 55,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-056",
+      "title": "Terraform \u2014 local validate CI gate + terraform.tfvars.example",
+      "description": "As a developer, I need terraform validate to run in CI and a complete tfvars example so onboarding is frictionless.",
+      "acceptanceCriteria": [
+        "cloudbuild.yaml updated: new step runs 'terraform init -backend=false && terraform validate' before Docker build step",
+        "terraform.tfvars.example: all required variables with comments, no secret values",
+        "terraform/README.md: prerequisites (Terraform 1.6+, gcloud auth), commands (init, plan, apply), module dependency diagram",
+        "All terraform files pass 'terraform fmt -check'",
+        "'terraform init -backend=false && terraform validate && terraform plan -var-file=terraform.tfvars.example -var=\"project_id=placeholder\"' exits 0"
+      ],
+      "priority": 56,
+      "passes": false,
+      "notes": "LOCAL: CI runs validate+plan only. 'terraform apply' is a manual production step documented in DEPLOY.md."
     }
   ]
 }
