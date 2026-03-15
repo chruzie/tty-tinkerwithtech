@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import time
 from collections import defaultdict
 from collections.abc import Callable
@@ -36,10 +37,23 @@ _hour_buckets: dict[str, _TokenBucket] = defaultdict(lambda: _TokenBucket(50, 50
 
 
 def _ip_hash(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
+    trusted_proxy_count = int(os.environ.get("TRUSTED_PROXY_COUNT", "0"))
     host = request.client.host if request.client else "unknown"
-    raw = forwarded or host
-    ip = raw.split(",")[0].strip()
+
+    if trusted_proxy_count == 0:
+        ip = host
+    else:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            parts = [p.strip() for p in forwarded.split(",")]
+            # Pick the Nth-from-right entry added by the trusted proxy chain.
+            # index = max(0, len(parts) - trusted_proxy_count) gives the leftmost
+            # IP injected by the outermost trusted hop.
+            idx = max(0, len(parts) - trusted_proxy_count)
+            ip = parts[idx]
+        else:
+            ip = host
+
     return hashlib.sha256(ip.encode()).hexdigest()[:16]
 
 
