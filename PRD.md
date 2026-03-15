@@ -1124,8 +1124,9 @@ steps:
 |-----------|-------|
 | ThemeCard | Color strip (8 swatches), name, author, target badges, download/like counts |
 | PaletteGrid | 8×2 swatch grid (normal + bright rows), hover shows hex + ANSI index |
-| TerminalPreview | Scanline effect, mock zsh output, live theme colors applied inline |
-| ProviderSelector | Radio pill group, auto-detects Ollama, green = active |
+| HeroTerminal | Animated hero terminal (see §19.6) — loops theme cycling with typing animation |
+| TerminalPreview | Scanline + 3D tilt, live theme colors applied inline, "Export video" button (Remotion) |
+| ProviderSelector | Radio pill group; web default = Gemini free; BYOK key input expands inline |
 | TargetSelector | Ghostty / iTerm2 pill toggle |
 | FormatToggle | Ghostty / iTerm2 output switch on results page |
 | SortBar | Downloads / Likes / Newest tabs + terminal filter + search input |
@@ -1151,6 +1152,166 @@ steps:
 | Icons | Lucide SVG | Consistent, accessible, no emoji |
 | Hosting | Firebase Hosting | Free CDN, HTTPS, `tty-theme.dev` |
 | State | Vanilla JS (MVP) → React (v2) | Keep it simple for launch |
+| Analytics | Google Analytics 4 (GA4) | See §19.7 |
+| Support | Ko-fi widget | See §19.8 |
+
+---
+
+### 19.6 Terminal Preview Animation (Remotion)
+
+The terminal preview is the product's core visual statement — it must be cinematic and immediately legible. There are two distinct rendering contexts:
+
+#### 19.6.1 In-Browser Live Preview (CSS + JS — always-on)
+
+Rendered entirely client-side with no external dependencies. Used on the home hero and results page.
+
+**Visual spec (aligned with Remotion reference and UI/UX Pro Max recommendations):**
+
+| Property | Value | Rationale |
+|----------|-------|-----------|
+| Window chrome | macOS-style traffic lights (`#FF5F57`, `#FFBD2E`, `#28CA41`) | Authentic — users instantly recognise a terminal |
+| Container | `perspective: 1200px` + `rotateX(4deg) rotateY(-2deg)` | 3D depth without distortion |
+| Float animation | Oscillates `rotateX(2–4deg) rotateY(-2–2deg)` over 6s ease-in-out | Cinematic idle, never distracting |
+| Scanline overlay | `repeating-linear-gradient` every 4px, 4% opacity | CRT texture, reinforces terminal identity |
+| Typing animation | JS `setTimeout` char-by-char, 45ms per character (adjustable) | Satisfying, readable pacing |
+| Output lines | Fade-in per line, 120ms stagger | Progressive disclosure |
+| Theme transition | Palette strip swaps with 400ms `transition-colors`, terminal bg cross-fades | Shows the actual theme live |
+| Loop | 3 demo themes cycle with 2s pause between → restart | Demonstrates product value on page load |
+| `prefers-reduced-motion` | All animation collapsed to instant (0.01ms) | WCAG 2.1 §2.3 compliance |
+
+**Demo theme cycle (home hero):**
+
+```
+1. "cyberpunk neon rain"  → bg: #0d0d1a, accent: #4895ef, green: #57cc99
+2. "tokyo midnight"       → bg: #1a1b26, accent: #7aa2f7, green: #9ece6a
+3. "aurora borealis ice"  → bg: #0d1117, accent: #79c0ff, green: #56d364
+```
+
+Each cycle: type prompt → generate output lines → show palette strip → pause 2s → fade → next theme.
+
+**Component structure:**
+```
+HeroTerminal/
+├── WindowChrome          # traffic lights + title bar
+├── TerminalBody          # scrollable content area, receives typed lines
+│   ├── TypeWriter        # JS char-by-char engine, emits lines
+│   └── OutputLine        # individual line with fade-in animation
+├── PaletteStrip          # 16 color swatches, 1.5px strip at bottom
+└── ScanlineOverlay       # CSS pseudo-element, pointer-events: none
+```
+
+#### 19.6.2 Remotion Video Export (MP4 / GIF — optional, CLI)
+
+For social sharing on X/Twitter, LinkedIn, etc. Users can export a 10-second animated video of their theme being applied to the terminal.
+
+**CLI command:**
+```bash
+tty-theme export-video "cyberpunk-neon-rain" --output ./preview.mp4
+tty-theme export-video "cyberpunk-neon-rain" --output ./preview.gif --fps 30
+```
+
+**Remotion composition spec:**
+
+| Property | Value |
+|----------|-------|
+| Duration | 10 seconds @ 30fps (300 frames) |
+| Resolution | 1920×1080 (16:9) or 1280×720 |
+| Font | Space Mono 700 (loaded via Remotion `staticFile`) |
+| Background | `#0F172A` (page bg) with centered terminal window |
+| Entrance | `spring({ frame, fps, config: { damping: 12, stiffness: 80 } })` scale 0.92→1 + translateY(20→0) |
+| 3D tilt | CSS `rotateX(8deg) rotateY(-4deg)` → `rotateX(0) rotateY(0)` over first 30 frames |
+| Typing | 1 frame per character (45ms @ 30fps ≈ 1.35 frames — round to 1) |
+| Output lines | Stagger 8 frames per line |
+| Palette reveal | Strip colors animate in left-to-right, 3 frames per swatch |
+| Audio | Optional ambient synth pad (user-supplied or default), fade in/out |
+| End card | `tty-theme.dev/t/<slug>` centered, fade-in at frame 270 |
+
+**Remotion dependencies (dev-only, not in published CLI):**
+```
+@remotion/renderer   # headless Chrome rendering
+@remotion/core       # React composition API
+```
+
+Remotion is a **dev/CLI dependency only** — it is never bundled into the web app or Cloud Run image.
+
+**Repo location:** `remotion/` directory at project root:
+```
+remotion/
+├── index.tsx           # registerRoot
+├── Root.tsx            # <Composition> definition
+├── TerminalScene.tsx   # main composition
+├── TypeWriter.tsx      # typing effect component
+├── PaletteReveal.tsx   # strip animation
+└── EndCard.tsx         # URL end card
+```
+
+**Render script:**
+```bash
+npx remotion render remotion/index.tsx TerminalScene \
+  --props='{"slug":"cyberpunk-neon-rain","palette":[...]}' \
+  --output=./preview.mp4
+```
+
+---
+
+### 19.7 Analytics — Google Analytics 4
+
+GA4 tracks usage to guide product decisions. Privacy-first implementation.
+
+**Tag ID:** `G-XXXXXXXXXX` (set via Firebase Hosting environment config — not hardcoded)
+
+**Events tracked:**
+
+| Event | Trigger | Parameters |
+|-------|---------|------------|
+| `generate_prompt` | User submits prompt | `provider`, `tier_used`, `target_terminal` |
+| `generate_image` | User submits image | `has_refine`, `target_terminal` |
+| `theme_copy` | Copy button clicked | `format` (ghostty/iterm2), `slug` |
+| `theme_install` | Install button clicked | `target_terminal`, `slug` |
+| `theme_share` | Share button clicked | `slug` |
+| `gallery_view` | Gallery page loaded | `sort_by`, `filter_terminal` |
+| `byok_key_set` | User saves BYOK key | `provider` (NO key value ever logged) |
+| `export_video` | Video export triggered | `format` (mp4/gif), `slug` |
+
+**Privacy rules:**
+- `anonymize_ip: true` always enabled
+- PII never sent: no email, no raw query text, no API key values
+- User consent banner displayed on first visit (GDPR/CCPA compliance)
+- `analytics_storage: 'denied'` until user consents
+
+**Implementation:** GA4 script loaded in `<head>` via gtag.js. Firebase Hosting injects `G-XXXXXXXXXX` at deploy time via `firebase.json` rewrites (never hardcoded in source).
+
+```html
+<!-- GA4 — injected by Firebase Hosting at deploy time -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-XXXXXXXXXX', {
+    anonymize_ip: true,
+    cookie_flags: 'SameSite=None;Secure'
+  });
+</script>
+```
+
+---
+
+### 19.8 Support — Ko-fi Widget
+
+A non-intrusive support link styled to match the terminal aesthetic. Displayed in the site header and footer.
+
+**Ko-fi profile:** `https://ko-fi.com/Y8Y51KQK8E`
+
+**Design:**
+- Styled as a pill button matching the nav link idiom: `text-xs`, `border border-border`, rounded, `hover:border-[#72a4f2] hover:text-[#72a4f2]`
+- Icon: Ko-fi cup SVG (Simple Icons `si-kofi` path)
+- Label: `support this project`
+- Color: `#72a4f2` on hover (Ko-fi brand blue — visually close to `#818CF8` AI accent)
+- Opens in new tab (`target="_blank" rel="noopener noreferrer"`)
+- Positioned right-most item in the header nav
+
+**No Ko-fi JS widget embedded** — a styled `<a>` link is used instead to avoid loading third-party scripts on the critical path and to maintain visual consistency.
 
 ---
 
