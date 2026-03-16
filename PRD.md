@@ -1514,61 +1514,9 @@ tty-theme neofetch --target iterm2          # read active iTerm2 profile
 
 **Web hero animation:** The neofetch block is built via DOM methods (no innerHTML) and appended after the generation output lines. Each theme cycle types `$ neofetch`, then fades in the info card with the live palette colors applied as CSS `color:`. This is the signature moment that makes the product's value immediately tangible.
 
-**Viral sharing mechanic:** The neofetch screenshot is the primary social sharing artifact — users post it on X/Mastodon/Bluesky with `#tty-theme`. The URL `tty-theme.dev/t/<slug>` is implicit in the card (visible in the Remotion video end card).
+**Viral sharing mechanic:** The neofetch screenshot is the primary social sharing artifact — users post it on X/Mastodon/Bluesky with `#tty-theme`. The URL `tty-theme.dev/t/<slug>` is shown in the neofetch card's info block.
 
----
-
-#### 19.6.3 Remotion Video Export (MP4 / GIF — optional, CLI)
-
-For social sharing on X/Twitter, LinkedIn, etc. Users can export a 10-second animated video of their theme being applied to the terminal.
-
-**CLI command:**
-```bash
-tty-theme export-video "cyberpunk-neon-rain" --output ./preview.mp4
-tty-theme export-video "cyberpunk-neon-rain" --output ./preview.gif --fps 30
-```
-
-**Remotion composition spec:**
-
-| Property | Value |
-|----------|-------|
-| Duration | 10 seconds @ 30fps (300 frames) |
-| Resolution | 1920×1080 (16:9) or 1280×720 |
-| Font | Space Mono 700 (loaded via Remotion `staticFile`) |
-| Background | `#0F172A` (page bg) with centered terminal window |
-| Entrance | `spring({ frame, fps, config: { damping: 12, stiffness: 80 } })` scale 0.92→1 + translateY(20→0) |
-| 3D tilt | CSS `rotateX(8deg) rotateY(-4deg)` → `rotateX(0) rotateY(0)` over first 30 frames |
-| Typing | 1 frame per character (45ms @ 30fps ≈ 1.35 frames — round to 1) |
-| Output lines | Stagger 8 frames per line |
-| Palette reveal | Strip colors animate in left-to-right, 3 frames per swatch |
-| Audio | Optional ambient synth pad (user-supplied or default), fade in/out |
-| End card | `tty-theme.dev/t/<slug>` centered, fade-in at frame 270 |
-
-**Remotion dependencies (dev-only, not in published CLI):**
-```
-@remotion/renderer   # headless Chrome rendering
-@remotion/core       # React composition API
-```
-
-Remotion is a **dev/CLI dependency only** — it is never bundled into the web app or Cloud Run image.
-
-**Repo location:** `remotion/` directory at project root:
-```
-remotion/
-├── index.tsx           # registerRoot
-├── Root.tsx            # <Composition> definition
-├── TerminalScene.tsx   # main composition
-├── TypeWriter.tsx      # typing effect component
-├── PaletteReveal.tsx   # strip animation
-└── EndCard.tsx         # URL end card
-```
-
-**Render script:**
-```bash
-npx remotion render remotion/index.tsx TerminalScene \
-  --props='{"slug":"cyberpunk-neon-rain","palette":[...]}' \
-  --output=./preview.mp4
-```
+> **Design decision:** There is no video export or Remotion integration. The neofetch-style terminal preview (§19.6.2) is the only and sufficient sharing artifact. It renders instantly in-browser (no build step, no headless Chrome, no extra CLI command), is screenshot-friendly, and matches what terminal users actually share. `tty-theme export-video` does **not exist** — do not reference it anywhere in the UI or docs.
 
 ---
 
@@ -1886,7 +1834,7 @@ CLI-10: No blank line between theme output and install-path message when `--inst
 
 #### Web — Medium
 
-WEB-6: Header nav overflows on mobile (<600px) — no responsive collapse. WEB-7: `prefers-reduced-motion` only shortens animation duration, doesn't remove 3D tilt transform — still disorienting. WEB-8: Continuous `animate-pulse-green` on CTA button violates WCAG 2.2.2 (auto-playing motion >5s). WEB-9: "Cached themes" section label misleading; empty state undesigned. WEB-10: "Tier 3" label is internal pipeline language — replace with "new (generated)" / "cached". WEB-11: "Export video" button references nonexistent `tty-theme export-video` CLI command — trust-breaking. WEB-12: Palette swatch tooltips show only index number; no hex value, semantic name, or WCAG contrast indicator. WEB-13: "new query / regenerate / contribute" buttons have identical visual weight despite very different consequence. WEB-14: Gallery has no pagination or load-more design despite showing "247 themes".
+WEB-6: Header nav overflows on mobile (<600px) — no responsive collapse. WEB-7: `prefers-reduced-motion` only shortens animation duration, doesn't remove 3D tilt transform — still disorienting. WEB-8: Continuous `animate-pulse-green` on CTA button violates WCAG 2.2.2 (auto-playing motion >5s). WEB-9: "Cached themes" section label misleading; empty state undesigned. WEB-10: "Tier 3" label is internal pipeline language — replace with "new (generated)" / "cached". WEB-11: **[RESOLVED — design decision]** Video export removed from the product. The neofetch terminal preview (§19.6.2) is the only sharing artifact. Remove the "Export video" button from the web UI entirely. WEB-12: Palette swatch tooltips show only index number; no hex value, semantic name, or WCAG contrast indicator. WEB-13: "new query / regenerate / contribute" buttons have identical visual weight despite very different consequence. WEB-14: Gallery has no pagination or load-more design despite showing "247 themes".
 
 #### Web — Low
 
