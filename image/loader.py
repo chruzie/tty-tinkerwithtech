@@ -6,6 +6,8 @@ from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
+from security.ssrf_guard import safe_fetch
+
 _MAX_BYTES = 20 * 1024 * 1024  # 20 MB
 
 _ALLOWED_FORMATS = {"JPEG", "PNG", "GIF", "WEBP"}
@@ -47,10 +49,19 @@ def load_image(source: str | Path) -> Image.Image:
             raise FileNotFoundError(f"Image not found: {path}")
         data = path.read_bytes()
     else:
-        from security.ssrf_guard import safe_fetch
-
-        resp = safe_fetch(str(source), timeout=30.0, follow_redirects=False)
-        resp.raise_for_status()
+        url = str(source)
+        # Follow up to 3 redirects manually so each hop is SSRF-checked.
+        for _ in range(3):
+            resp = safe_fetch(url, timeout=30.0, follow_redirects=False)
+            if resp.status_code in (301, 302, 303, 307, 308):  # noqa: PLR2004
+                location = resp.headers.get("location", "")
+                if not location:
+                    break
+                url = location
+            else:
+                break
+        if resp.status_code < 200 or resp.status_code >= 300:  # noqa: PLR2004
+            raise ValueError(f"Image URL returned HTTP {resp.status_code}")
         data = resp.content
 
     if len(data) > _MAX_BYTES:
@@ -68,8 +79,6 @@ def load_image(source: str | Path) -> Image.Image:
     if img.format not in _ALLOWED_FORMATS:
         raise ValueError(f"Unsupported image format: {img.format}")
 
-    # Strip EXIF by converting through raw pixel data
-    img_clean = Image.new(img.mode, img.size)
-    img_clean.putdata(list(img.getdata()))
-
-    return img_clean.convert("RGB")
+    # Strip EXIF: img.copy() copies pixels but drops the .info dict (where EXIF lives).
+    # This is O(1) vs list(getdata())+putdata() which materialises all pixels as tuples.
+    return img.copy().convert("RGB")

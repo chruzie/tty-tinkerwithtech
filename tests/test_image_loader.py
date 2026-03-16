@@ -69,6 +69,72 @@ def test_null_bytes_rejected():
         _check_magic(_make_null_bytes())
 
 
+def test_redirect_followed_and_ssrf_checked():
+    """A 301 redirect to a safe HTTPS URL should be followed (no ValueError)."""
+    from unittest.mock import MagicMock
+
+    import PIL.Image
+
+    from image.loader import load_image
+
+    # First call returns 301 → second call returns 200 with image bytes
+    redirect_resp = MagicMock()
+    redirect_resp.status_code = 301
+    redirect_resp.headers = {"location": "https://cdn.example.com/img.jpg"}
+
+    # Build a valid JPEG that PIL can open
+    import io
+
+    buf = io.BytesIO()
+    PIL.Image.new("RGB", (2, 2), color=(255, 0, 0)).save(buf, format="JPEG")
+    jpeg_bytes = buf.getvalue()
+
+    ok_resp = MagicMock()
+    ok_resp.status_code = 200
+    ok_resp.headers = {}
+    ok_resp.content = jpeg_bytes
+
+    with patch("image.loader.safe_fetch", side_effect=[redirect_resp, ok_resp]):
+        img = load_image("https://img.example.com/original.jpg")
+
+    assert img.mode == "RGB"
+
+
+def test_redirect_to_private_ip_raises():
+    """A redirect whose Location fails SSRF check must raise ValueError."""
+    from unittest.mock import MagicMock
+
+    from image.loader import load_image
+
+    redirect_resp = MagicMock()
+    redirect_resp.status_code = 302
+    redirect_resp.headers = {"location": "https://169.254.169.254/latest"}
+
+    def _fail_on_private(url, **kwargs):
+        if "169.254" in url:
+            raise ValueError("SSRF blocked")
+        return redirect_resp
+
+    with patch("image.loader.safe_fetch", side_effect=_fail_on_private):
+        with pytest.raises(ValueError, match="SSRF blocked"):
+            load_image("https://img.example.com/photo.jpg")
+
+
+def test_non_2xx_response_raises_value_error():
+    """A 404 response must raise ValueError with the status code."""
+    from unittest.mock import MagicMock
+
+    from image.loader import load_image
+
+    err_resp = MagicMock()
+    err_resp.status_code = 404
+    err_resp.headers = {}
+
+    with patch("image.loader.safe_fetch", return_value=err_resp):
+        with pytest.raises(ValueError, match="404"):
+            load_image("https://img.example.com/missing.jpg")
+
+
 def test_unidentified_image_error_raises_value_error():
     """PIL.UnidentifiedImageError must be re-raised as ValueError."""
     from pathlib import Path
