@@ -173,23 +173,26 @@ def config_status() -> None:
     repo = ThemeRepository()
     repo.init_db()
 
-    typer.echo("Provider availability:")
+    typer.echo("── Providers ──────────────────────────")
     from providers.registry import _build_chain
 
     for p in _build_chain():
         status = "✓ running" if p.health_check() else "✗ offline"
         typer.echo(f"  {p.name:12} {status}")
 
-    typer.echo(f"\nCache: {repo.db_path}")
-    themes = repo.list_themes(limit=5)
-    typer.echo(f"  Cached themes: {len(repo.list_themes(limit=10000))}")
-    if themes:
+    typer.echo("\n── Cache ──────────────────────────────")
+    typer.echo(f"  Path: {repo.db_path}")
+    all_themes = repo.list_themes(limit=10000)
+    typer.echo(f"  Cached themes: {len(all_themes)}")
+    recent = all_themes[:5]
+    if recent:
         typer.echo("  Recent themes:")
-        for t in themes:
+        for t in recent:
             typer.echo(f"    {t['created_at'][:16]}  {t.get('query_raw', '(image)')[:40]}")
 
     spend = repo.get_daily_spend()
-    typer.echo(f"\nToday's spend: ${spend:.4f}")
+    typer.echo("\n── Spend ──────────────────────────────")
+    typer.echo(f"  Today's spend: ${spend:.4f}")
 
 
 # ── seed command ───────────────────────────────────────────────────────────────
