@@ -21,6 +21,13 @@ class _TokenBucket:
         self.tokens = capacity
         self.last_refill = time.monotonic()
 
+    def available(self) -> bool:
+        """Return True if a token is available without consuming it."""
+        now = time.monotonic()
+        elapsed = now - self.last_refill
+        projected = min(self.capacity, self.tokens + elapsed * self.rate)
+        return projected >= 1.0
+
     def consume(self) -> bool:
         now = time.monotonic()
         elapsed = now - self.last_refill
@@ -78,12 +85,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         ip_hash = _ip_hash(request)
 
-        if not _get_minute_bucket(ip_hash).consume() or not _get_hour_bucket(ip_hash).consume():
+        minute_bucket = _get_minute_bucket(ip_hash)
+        hour_bucket = _get_hour_bucket(ip_hash)
+        # Check both buckets before consuming either so a full hour quota
+        # never silently burns a minute token (BUG-07).
+        if not minute_bucket.available() or not hour_bucket.available():
             return Response(
                 content='{"detail":"Rate limit exceeded"}',
                 status_code=429,
                 headers={"Retry-After": "60", "Content-Type": "application/json"},
             )
+        minute_bucket.consume()
+        hour_bucket.consume()
 
         return await call_next(request)
 

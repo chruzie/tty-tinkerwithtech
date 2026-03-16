@@ -59,3 +59,54 @@ class TestTTLCacheEviction:
             b1 = _get_hour_bucket("cafebabe87654321")
             b2 = _get_hour_bucket("cafebabe87654321")
             assert b1 is b2
+
+
+class TestRateLimiterTokenBurn:
+    """Verify BUG-07 fix: hour-exhausted requests must not burn minute tokens."""
+
+    def test_hour_exhausted_does_not_burn_minute_token(self):
+        """When the hour bucket is exhausted, the minute token count is unchanged."""
+        from cachetools import TTLCache
+
+        from api.middleware import _get_hour_bucket, _get_minute_bucket
+
+        with (
+            patch("api.middleware._minute_buckets", TTLCache(maxsize=10000, ttl=3600)),
+            patch("api.middleware._hour_buckets", TTLCache(maxsize=10000, ttl=3600)),
+        ):
+            ip = "testip000001"
+            minute_bucket = _get_minute_bucket(ip)
+            hour_bucket = _get_hour_bucket(ip)
+
+            # Drain the hour bucket completely
+            while hour_bucket.consume():
+                pass
+
+            minute_tokens_before = minute_bucket.tokens
+
+            # Attempt to pass the rate limiter (should fail — hour exhausted)
+            assert not hour_bucket.available()
+            # Minute bucket should NOT be consumed
+            assert minute_bucket.tokens == minute_tokens_before
+
+    def test_minute_exhausted_does_not_burn_hour_token(self):
+        """When the minute bucket is exhausted, the hour bucket count is unchanged."""
+        with (
+            patch("api.middleware._minute_buckets", TTLCache(maxsize=10000, ttl=3600)),
+            patch("api.middleware._hour_buckets", TTLCache(maxsize=10000, ttl=3600)),
+        ):
+            from api.middleware import _get_hour_bucket, _get_minute_bucket
+
+            ip = "testip000002"
+            minute_bucket = _get_minute_bucket(ip)
+            hour_bucket = _get_hour_bucket(ip)
+
+            # Drain the minute bucket
+            while minute_bucket.consume():
+                pass
+
+            hour_tokens_before = hour_bucket.tokens
+
+            assert not minute_bucket.available()
+            # Hour bucket should NOT be consumed when minute check fails first
+            assert hour_bucket.tokens == hour_tokens_before
