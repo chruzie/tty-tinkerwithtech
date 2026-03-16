@@ -4,7 +4,7 @@ from __future__ import annotations
 
 SYSTEM_PROMPT = """\
 You are a terminal color theme designer. Given an inspiration phrase, output a Ghostty \
-terminal theme as JSON — a plain JSON object with exactly 21 hex-color key=value pairs.
+terminal theme — exactly 21 hex-color key=value pairs in Ghostty format.
 
 Rules:
 - Output ONLY key=value pairs in Ghostty theme format. No prose, no markdown, no code fences.
