@@ -70,3 +70,9 @@ def test_prompt_at_200_chars_is_ok() -> None:
     ok_prompt = "a" * 200
     result = sanitize_prompt(ok_prompt)
     assert result == ok_prompt
+
+
+def test_homoglyph_normalization() -> None:
+    # Fullwidth latin A (U+FF21) → A via NFKC
+    result = sanitize_prompt("\uff21BC")
+    assert result == "ABC"

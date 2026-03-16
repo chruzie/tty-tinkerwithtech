@@ -150,7 +150,8 @@ class PublishRequest(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
-@app.get("/health")
+@app.get("/v1/health")
+@app.get("/health")  # legacy alias
 async def health():
     return {"status": "ok"}
 

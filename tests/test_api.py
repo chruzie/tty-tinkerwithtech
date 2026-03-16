@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -38,6 +38,14 @@ def client():
 async def test_health(client):
     async with client as c:
         resp = await c.get("/health")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_health_v1(client):
+    async with client as c:
+        resp = await c.get("/v1/health")
         assert resp.status_code == 200
         assert resp.json() == {"status": "ok"}
 

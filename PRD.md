@@ -426,14 +426,14 @@ tty-tinkerwithtech/
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
 | 0 | Foundation — pyproject.toml, security modules, serializers, SQLite cache | ✓ done |
-| 1 | Prompt injection protection + input validation in `generator/prompt.py` + `security/input_sanitizer.py` | next |
-| 2 | Provider system — Gemini + Groq via `OpenAICompatProvider`, 429 fallback | |
-| 3 | Similarity cache — MiniLM embeddings, cosine similarity, tiered lookup | |
-| 4 | API — FastAPI app with all endpoints, rate limiting, download count | |
-| 5 | Web UI — Generator page, gallery, theme detail, rate limit UX | |
-| 6 | Community gallery — publish, browse, slug system | |
-| 7 | Security hardening — bandit, pip-audit CI, SSRF tests | |
-| 8 | Terraform IaC + DEPLOY.md | |
+| 1 | Prompt injection protection + input validation | ✓ done |
+| 2 | Provider system — Gemini + Groq, 429 fallback, env-var keys | ✓ done |
+| 3 | Similarity cache — MiniLM embeddings, cosine similarity, tiered lookup | ✓ done |
+| 4 | API — all endpoints, rate limiting, spend cap, download count | ✓ done |
+| 5 | Web UI — Generator page, gallery, theme detail, rate limit UX | ✓ done |
+| 6 | Community gallery — publish, browse, slug system | ✓ done |
+| 7 | Security hardening — bandit clean, SSRF guard, input sanitizer | ✓ done |
+| 8 | Terraform IaC + DEPLOY.md | ✓ done |
 
 ---
 
