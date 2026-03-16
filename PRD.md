@@ -527,15 +527,22 @@ A user with Ollama running pays $0 and never needs to configure anything. A user
 
 #### Web UI / Hosted Mode
 
-The hosted web app **does not run Ollama or any local model server**. Local model providers (Ollama, LM Studio, llamafile) are a CLI-only feature. In the web UI, provider resolution is:
+The hosted web app **does not run Ollama or any local model server**. Local model providers (Ollama, LM Studio, llamafile) are a CLI-only feature.
+
+The web UI exposes a simplified **two-mode provider selector**:
+
+| Mode | Description |
+|------|-------------|
+| **Free** | Uses the server-side Gemini 2.0 Flash Lite quota. No key needed. Generate button always enabled. |
+| **BYOK** | User pastes their own API key. A dropdown selects the provider (Groq / Gemini / OpenAI / Claude / Mistral). Generate button is disabled until a non-empty key is entered. Key stored in browser localStorage only — never sent to tty-theme servers. |
 
 ```
-1. Server-side default: Gemini 2.0 Flash Lite (free tier, key in Secret Manager)
-2. User BYOK: if the user supplies their own API key in the browser, it overrides the default
-   - Key is stored in browser localStorage only
+1. Free (default): server-side Gemini 2.0 Flash Lite (key in Secret Manager)
+2. BYOK: user-supplied key overrides the server default
+   - Key stored in browser localStorage only
    - Key is never sent to or stored on the tty-theme server
    - See §6.4 for full BYOK security model
-3. If server-side quota exceeded: HTTP 429 with prompt to add BYOK key
+3. If server-side quota exceeded: HTTP 429 with prompt to switch to BYOK
 ```
 
 ### 6.3 Configuration & Key Storage

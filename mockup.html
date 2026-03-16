@@ -226,102 +226,52 @@
             free tier active
           </span>
         </div>
-        <div class="flex gap-2 flex-wrap" role="radiogroup" aria-label="Select AI provider">
-          <button onclick="selectProvider(this)" data-provider="gemini-default" data-byok="false"
-            class="provider-btn selected px-3 py-1.5 text-xs border border-green/40 bg-green/10 text-green rounded cursor-pointer transition-all duration-200 hover:border-green"
+        <div class="flex gap-2" role="radiogroup" aria-label="Select AI provider mode">
+          <button id="provider-free-btn" onclick="selectProviderMode('free')"
+            class="provider-mode-btn selected px-3 py-1.5 text-xs border border-green/40 bg-green/10 text-green rounded cursor-pointer transition-all duration-200"
             role="radio" aria-checked="true">
-            Gemini (free · default)
+            Free <span class="opacity-70">(Gemini quota)</span>
           </button>
-          <button onclick="selectProvider(this)" data-provider="gemini" data-byok="true" data-placeholder="AIza..."
-            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
+          <button id="provider-byok-btn" onclick="selectProviderMode('byok')"
+            class="provider-mode-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
             role="radio" aria-checked="false">
-            Gemini (BYOK)
-          </button>
-          <button onclick="selectProvider(this)" data-provider="groq" data-byok="true" data-placeholder="gsk_..."
-            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
-            role="radio" aria-checked="false">
-            Groq
-          </button>
-          <button onclick="selectProvider(this)" data-provider="openai" data-byok="true" data-placeholder="sk-..."
-            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
-            role="radio" aria-checked="false">
-            OpenAI
-          </button>
-          <button onclick="selectProvider(this)" data-provider="claude" data-byok="true" data-placeholder="sk-ant-..."
-            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
-            role="radio" aria-checked="false">
-            Claude Haiku
-          </button>
-          <button onclick="selectProvider(this)" data-provider="mistral" data-byok="true" data-placeholder="paste Mistral key..."
-            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-purple hover:text-purple"
-            role="radio" aria-checked="false">
-            Mistral
-          </button>
-          <button onclick="selectProvider(this)" data-provider="local-llm" data-byok="false" data-local="true"
-            class="provider-btn px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer transition-all duration-200 hover:border-cyan hover:text-cyan"
-            role="radio" aria-checked="false">
-            Local LLM
+            BYOK <span class="opacity-70">(your key)</span>
           </button>
         </div>
 
-        <!-- Local LLM config — shown when Local LLM is selected -->
-        <div id="local-llm-row" class="hidden mt-3">
-          <div class="border border-cyan/20 bg-cyan/5 rounded p-3 mb-2">
-            <p class="text-xs" style="color:#22D3EE;">
-              <strong>Local LLM</strong> — your browser connects directly to your Ollama / LM Studio / llamafile server.
-              tty-theme servers see <strong>nothing</strong>. You must enable CORS on your local server first.
-            </p>
-            <p class="text-xs mt-1.5" style="color:#475569;">
-              Ollama: <code class="text-cyan">OLLAMA_ORIGINS=https://tty-theme.dev ollama serve</code>
-            </p>
-          </div>
-          <div class="flex gap-2">
-            <select id="local-preset" onchange="applyLocalPreset()" class="bg-surface border border-border rounded px-2 py-1.5 text-xs text-muted focus:outline-none focus:border-cyan/60 cursor-pointer">
-              <option value="http://localhost:11434">Ollama :11434</option>
-              <option value="http://localhost:1234">LM Studio :1234</option>
-              <option value="http://localhost:8080">llamafile :8080</option>
-              <option value="custom">custom...</option>
-            </select>
-            <input id="local-base-url" type="url" autocomplete="off"
-              value="http://localhost:11434"
-              class="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text focus:outline-none focus:border-cyan/60"
-              oninput="saveLocalConfig()" placeholder="http://localhost:11434" />
-          </div>
-          <div class="flex gap-2 mt-2">
-            <input id="local-model" type="text" autocomplete="off"
-              value="llama3:8b"
-              class="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text focus:outline-none focus:border-cyan/60"
-              oninput="saveLocalConfig()" placeholder="model name (e.g. llama3:8b)" />
-            <button onclick="testLocalConnection()" class="px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer hover:border-cyan hover:text-cyan transition-colors duration-200">
-              test
-            </button>
-          </div>
-          <p class="text-muted text-xs mt-1.5">Stored in <code class="text-cyan">localStorage</code> only — never sent to tty-theme servers.</p>
-        </div>
-
-        <!-- BYOK key input — shown when a cloud BYOK provider is selected -->
+        <!-- BYOK section — shown when BYOK is selected -->
         <div id="byok-row" class="hidden mt-3">
           <div class="border border-amber/30 bg-amber/5 rounded p-3 mb-2">
             <p class="text-xs" style="color:#F59E0B">
               <strong>⚠ Security notice:</strong>
               Your key is stored in <strong>this browser only</strong> (localStorage).
-              It is never sent to or stored on tty-theme servers — it goes directly from your browser to the provider's API, or is passed ephemerally for CORS-restricted providers and immediately discarded.
+              It is never sent to or stored on tty-theme servers.
               <strong>tty-theme is not responsible for unauthorized use of your key.</strong>
               Use a key with a spending limit. Clear saved keys on shared computers.
             </p>
+          </div>
+          <div class="flex gap-2 mb-2">
+            <select id="byok-provider-select" onchange="onByokProviderChange()"
+              class="bg-surface border border-border rounded px-2 py-1.5 text-xs text-muted focus:outline-none focus:border-amber/60 cursor-pointer">
+              <option value="groq" data-placeholder="gsk_...">Groq</option>
+              <option value="gemini" data-placeholder="AIza...">Gemini</option>
+              <option value="openai" data-placeholder="sk-...">OpenAI</option>
+              <option value="claude" data-placeholder="sk-ant-...">Claude</option>
+              <option value="mistral" data-placeholder="paste Mistral key...">Mistral</option>
+            </select>
           </div>
           <div class="flex gap-2 items-center">
             <input id="byok-key-input" type="password" autocomplete="off" spellcheck="false"
               placeholder="paste API key..."
               class="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-xs font-mono text-text focus:outline-none focus:border-amber/60 placeholder:text-muted"
-              oninput="saveBYOKKey()"
+              oninput="onByokKeyInput()"
             />
             <button onclick="clearBYOKKey()"
               class="px-3 py-1.5 text-xs border border-border text-muted rounded cursor-pointer hover:border-red hover:text-red transition-colors duration-200">
               Clear
             </button>
           </div>
-          <p class="text-muted text-xs mt-1.5">Stored as <code class="text-purple">localStorage["tty-theme:byok:<span id="byok-provider-label">provider</span>"]</code> · cleared when you click Clear or use browser settings.</p>
+          <p class="text-muted text-xs mt-1.5">Stored as <code class="text-purple">localStorage["tty-theme:byok:<span id="byok-provider-label">groq</span>"]</code> · cleared when you click Clear or use browser settings.</p>
         </div>
       </div>
 
@@ -398,7 +348,7 @@
             <button onclick="setPrompt('pastel cottagecore')" class="px-2.5 py-1 bg-bg border border-border text-muted text-xs rounded hover:border-green hover:text-green transition-all duration-200 cursor-pointer">pastel cottagecore</button>
           </div>
 
-          <button onclick="showResults()" class="mt-5 w-full bg-green text-bg font-bold text-sm py-2.5 rounded hover:bg-green/90 transition-colors duration-200 cursor-pointer animate-pulse-green flex items-center justify-center gap-2" aria-label="Generate theme from prompt">
+          <button id="generate-btn" onclick="showResults()" class="mt-5 w-full bg-green text-bg font-bold text-sm py-2.5 rounded hover:bg-green/90 transition-colors duration-200 cursor-pointer animate-pulse-green flex items-center justify-center gap-2" aria-label="Generate theme from prompt">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
               <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
@@ -1392,76 +1342,72 @@ palette = 15=#ffffff</code></pre>
     }
 
     // ── Provider selection ────────────────────────────────────
-    function selectProvider(btn) {
-      document.querySelectorAll('.provider-btn').forEach(b => {
-        b.classList.remove('border-green/40','bg-green/10','text-green');
-        b.classList.add('border-border','text-muted');
-        b.setAttribute('aria-checked','false');
-      });
-      btn.classList.remove('border-border','text-muted');
-      btn.classList.add('border-green/40','bg-green/10','text-green');
-      btn.setAttribute('aria-checked','true');
-
-      const provider = btn.dataset.provider;
-      const needsBYOK = btn.dataset.byok === 'true';
-      const byokRow = document.getElementById('byok-row');
-      const localRow = document.getElementById('local-llm-row');
-      const byokInput = document.getElementById('byok-key-input');
-      const byokLabel = document.getElementById('byok-provider-label');
-
-      // Always hide both first
-      if (localRow) localRow.classList.add('hidden');
-
-      if (btn.dataset.local === 'true') {
-        byokRow.classList.add('hidden');
-        localRow.classList.remove('hidden');
-        // Restore saved values
-        var savedUrl = localStorage.getItem('tty-theme:local:baseUrl');
-        var savedModel = localStorage.getItem('tty-theme:local:model');
-        if (savedUrl) document.getElementById('local-base-url').value = savedUrl;
-        if (savedModel) document.getElementById('local-model').value = savedModel;
-        document.getElementById('status-provider').textContent = 'local-llm';
+    function _updateGenerateBtn() {
+      const btn = document.getElementById('generate-btn');
+      if (!btn) return;
+      const isByok = document.getElementById('provider-byok-btn')
+        && document.getElementById('provider-byok-btn').getAttribute('aria-checked') === 'true';
+      if (!isByok) {
+        btn.disabled = false;
+        btn.classList.remove('opacity-40', 'cursor-not-allowed');
         return;
       }
+      const keyInput = document.getElementById('byok-key-input');
+      const hasKey = keyInput && keyInput.value.trim().length > 0;
+      btn.disabled = !hasKey;
+      btn.classList.toggle('opacity-40', !hasKey);
+      btn.classList.toggle('cursor-not-allowed', !hasKey);
+    }
 
-      if (needsBYOK) {
-        byokRow.classList.remove('hidden');
-        byokInput.placeholder = btn.dataset.placeholder || 'paste API key...';
-        byokLabel.textContent = provider;
-        // Restore any previously saved key for this provider
-        const saved = localStorage.getItem(`tty-theme:byok:${provider}`);
-        byokInput.value = saved ? '••••••••' : '';
-        byokInput.dataset.currentProvider = provider;
-      } else {
+    function selectProviderMode(mode) {
+      const freeBtn = document.getElementById('provider-free-btn');
+      const byokBtn = document.getElementById('provider-byok-btn');
+      const byokRow = document.getElementById('byok-row');
+
+      if (mode === 'free') {
+        freeBtn.classList.add('selected', 'border-green/40', 'bg-green/10', 'text-green');
+        freeBtn.classList.remove('border-border', 'text-muted');
+        freeBtn.setAttribute('aria-checked', 'true');
+        byokBtn.classList.remove('selected', 'border-green/40', 'bg-green/10', 'text-green');
+        byokBtn.classList.add('border-border', 'text-muted');
+        byokBtn.setAttribute('aria-checked', 'false');
         byokRow.classList.add('hidden');
-        byokInput.value = '';
+        document.getElementById('status-provider').textContent = 'gemini (free)';
+      } else {
+        byokBtn.classList.add('selected', 'border-green/40', 'bg-green/10', 'text-green');
+        byokBtn.classList.remove('border-border', 'text-muted');
+        byokBtn.setAttribute('aria-checked', 'true');
+        freeBtn.classList.remove('selected', 'border-green/40', 'bg-green/10', 'text-green');
+        freeBtn.classList.add('border-border', 'text-muted');
+        freeBtn.setAttribute('aria-checked', 'false');
+        byokRow.classList.remove('hidden');
+        onByokProviderChange();
       }
-
-      document.getElementById('status-provider').textContent = needsBYOK ? `${provider} (BYOK)` : provider;
+      _updateGenerateBtn();
     }
 
-    function applyLocalPreset() {
-      var sel = document.getElementById('local-preset');
-      var urlInput = document.getElementById('local-base-url');
-      if (sel.value !== 'custom') { urlInput.value = sel.value; saveLocalConfig(); }
-    }
-    function saveLocalConfig() {
-      var url = document.getElementById('local-base-url').value;
-      var model = document.getElementById('local-model').value;
-      if (url) localStorage.setItem('tty-theme:local:baseUrl', url);
-      if (model) localStorage.setItem('tty-theme:local:model', model);
-    }
-    function testLocalConnection() {
-      var url = document.getElementById('local-base-url').value;
-      showToast('testing ' + url + '/v1/models ...');
+    function onByokProviderChange() {
+      const sel = document.getElementById('byok-provider-select');
+      const provider = sel.value;
+      const opt = sel.options[sel.selectedIndex];
+      const keyInput = document.getElementById('byok-key-input');
+      const byokLabel = document.getElementById('byok-provider-label');
+      keyInput.placeholder = opt.dataset.placeholder || 'paste API key...';
+      byokLabel.textContent = provider;
+      const saved = localStorage.getItem(`tty-theme:byok:${provider}`);
+      keyInput.value = saved ? '••••••••' : '';
+      keyInput.dataset.currentProvider = provider;
+      document.getElementById('status-provider').textContent = `${provider} (BYOK)`;
+      _updateGenerateBtn();
     }
 
-    function saveBYOKKey() {
+    function onByokKeyInput() {
       const input = document.getElementById('byok-key-input');
       const provider = input.dataset.currentProvider;
       if (provider && input.value && input.value !== '••••••••') {
         localStorage.setItem(`tty-theme:byok:${provider}`, input.value);
       }
+      _updateGenerateBtn();
     }
 
     function clearBYOKKey() {
@@ -1470,6 +1416,7 @@ palette = 15=#ffffff</code></pre>
       if (provider) localStorage.removeItem(`tty-theme:byok:${provider}`);
       input.value = '';
       showToast('key cleared from localStorage');
+      _updateGenerateBtn();
     }
 
     // ── Prompt helpers ────────────────────────────────────────
