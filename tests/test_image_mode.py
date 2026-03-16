@@ -66,3 +66,26 @@ def test_refine_uses_build_refine_prompt():
     # The system key of the prompt passed to provider.generate must contain refine text
     called_prompt = mock_provider.generate.call_args[0][0]
     assert "Refine" in called_prompt["system"]
+
+
+def test_extract_palette_accepts_rgba():
+    """extract_palette must handle RGBA images without crashing (BUG-05)."""
+    from PIL import Image
+
+    from image.extractor import extract_palette
+
+    rgba_img = Image.new("RGBA", (10, 10), color=(100, 150, 200, 128))
+    colors = extract_palette(rgba_img, n_colors=2)
+    assert len(colors) == 2
+    assert all(c.startswith("#") for c in colors)
+
+
+def test_extract_palette_accepts_grayscale():
+    """extract_palette must handle L-mode (grayscale) images."""
+    from PIL import Image
+
+    from image.extractor import extract_palette
+
+    gray_img = Image.new("L", (10, 10), color=128)
+    colors = extract_palette(gray_img, n_colors=2)
+    assert len(colors) == 2

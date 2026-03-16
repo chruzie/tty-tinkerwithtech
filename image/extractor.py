@@ -13,6 +13,8 @@ def extract_palette(img: Image.Image, n_colors: int = 16) -> list[str]:
     Returns:
         List of ``#RRGGBB`` hex strings, sorted dark → bright.
     """
+    # Ensure RGB so reshape(-1, 3) is always valid (handles RGBA, L, P, etc.)
+    img = img.convert("RGB")
     # Downsample for speed
     img_small = img.resize((150, 150), Image.LANCZOS)
     pixels = np.array(img_small).reshape(-1, 3).astype(np.float32)
