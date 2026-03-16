@@ -171,11 +171,17 @@ function parseThemeColors(themeData) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    const idx = trimmed.indexOf('=');
-    if (idx === -1) continue;
-    const key = trimmed.slice(0, idx).trim();
-    const val = trimmed.slice(idx + 1).trim();
-    map[key] = val;
+    if (trimmed.startsWith('palette = ')) {
+      // "palette = 0 = #hex" → key "palette = 0", value "#hex"
+      const parts = trimmed.split('=');
+      if (parts.length >= 3) {
+        map['palette = ' + parts[1].trim()] = parts[2].trim();
+      }
+    } else {
+      const idx = trimmed.indexOf('=');
+      if (idx === -1) continue;
+      map[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
+    }
   }
   return map;
 }

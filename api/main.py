@@ -116,13 +116,22 @@ def _ip_hash(request: Request) -> str:
 
 
 def _parse_theme_colors(theme_data: str) -> dict[str, str]:
-    """Parse Ghostty key=value theme_data into a dict of color keys → hex values."""
+    """Parse Ghostty key=value theme_data into a dict of color keys → hex values.
+
+    Handles both 3-part palette lines ("palette = 0 = #hex") and
+    2-part semantic lines ("background = #hex").
+    """
     colors: dict[str, str] = {}
     for line in theme_data.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        if "=" in line:
+        if line.startswith("palette = "):
+            # "palette = 0 = #hex" → key "palette = 0", value "#hex"
+            parts = line.split("=", 2)
+            if len(parts) == 3:  # noqa: PLR2004
+                colors["palette = " + parts[1].strip()] = parts[2].strip()
+        elif "=" in line:
             key, _, val = line.partition("=")
             colors[key.strip()] = val.strip()
     return colors
