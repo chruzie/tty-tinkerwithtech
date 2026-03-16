@@ -17,16 +17,23 @@ class ThemeRepository:
     def __init__(self, db_path: Path = _DEFAULT_DB_PATH) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def close(self) -> None:
+        """Close the underlying SQLite connection."""
+        self._conn.close()
+
+    def __del__(self) -> None:
+        try:
+            self._conn.close()
+        except Exception:  # noqa: BLE001, S110
+            pass
 
     def init_db(self) -> None:
         """Create all tables and indexes (idempotent)."""
-        with self._connect() as conn:
-            conn.executescript("""
+        with self._conn:
+            self._conn.executescript("""
                 CREATE TABLE IF NOT EXISTS themes (
                     id          INTEGER PRIMARY KEY,
                     query_hash  TEXT NOT NULL UNIQUE,
@@ -86,8 +93,8 @@ class ThemeRepository:
     ) -> int:
         """Insert a theme row; returns new row id."""
         embedding_json = json.dumps(embedding) if embedding is not None else None
-        with self._connect() as conn:
-            cur = conn.execute(
+        with self._conn:
+            cur = self._conn.execute(
                 """
                 INSERT OR IGNORE INTO themes
                     (query_hash, query_raw, input_type, name, theme_data,
@@ -101,35 +108,31 @@ class ThemeRepository:
 
     def get_by_hash(self, query_hash: str) -> dict[str, Any] | None:
         """Return the most recent theme matching query_hash, or None."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM themes WHERE query_hash = ? ORDER BY id DESC LIMIT 1",
-                (query_hash,),
-            ).fetchone()
+        row = self._conn.execute(
+            "SELECT * FROM themes WHERE query_hash = ? ORDER BY id DESC LIMIT 1",
+            (query_hash,),
+        ).fetchone()
         return dict(row) if row else None
 
     def get_by_id(self, theme_id: int) -> dict[str, Any] | None:
         """Return a theme row by primary key."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM themes WHERE id = ?", (theme_id,)
-            ).fetchone()
+        row = self._conn.execute(
+            "SELECT * FROM themes WHERE id = ?", (theme_id,)
+        ).fetchone()
         return dict(row) if row else None
 
     def list_themes(self, limit: int = 100) -> list[dict[str, Any]]:
         """Return recent themes (most recent first)."""
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM themes ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
+        rows = self._conn.execute(
+            "SELECT * FROM themes ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
         return [dict(r) for r in rows]
 
     def get_all_embeddings(self) -> list[tuple[int, list[float]]]:
         """Return (id, vector) for all themes that have an embedding."""
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, embedding FROM themes WHERE embedding IS NOT NULL"
-            ).fetchall()
+        rows = self._conn.execute(
+            "SELECT id, embedding FROM themes WHERE embedding IS NOT NULL"
+        ).fetchall()
         result = []
         for row in rows:
             vector: list[float] = json.loads(row["embedding"])
@@ -139,8 +142,8 @@ class ThemeRepository:
     def log_cost(self, provider: str, cost_usd: float) -> None:
         """Upsert into cost_log for today (atomic, no TOCTOU race)."""
         today = date.today().isoformat()
-        with self._connect() as conn:
-            conn.execute(
+        with self._conn:
+            self._conn.execute(
                 """
                 INSERT INTO cost_log (date, provider, calls, cost_usd)
                 VALUES (?, ?, 1, ?)
@@ -161,8 +164,8 @@ class ThemeRepository:
         status: str,
     ) -> None:
         """Append an audit log row."""
-        with self._connect() as conn:
-            conn.execute(
+        with self._conn:
+            self._conn.execute(
                 """
                 INSERT INTO audit_log
                     (ip_hash, query_hash, input_type, provider, tier_used, cost_usd, status)
@@ -174,9 +177,8 @@ class ThemeRepository:
     def get_daily_spend(self) -> float:
         """Return total cost_usd spent today across all providers."""
         today = date.today().isoformat()
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT COALESCE(SUM(cost_usd), 0.0) AS total FROM cost_log WHERE date = ?",
-                (today,),
-            ).fetchone()
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0.0) AS total FROM cost_log WHERE date = ?",
+            (today,),
+        ).fetchone()
         return float(row["total"])
