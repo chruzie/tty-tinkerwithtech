@@ -227,3 +227,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
 - **Learnings for future iterations:**
   - Changed "Press Enter to skip any provider." to "Cloud providers (optional — press Enter to skip):" to make context clearer for the added local provider info
 ---
+
+## 2026-03-15 - US-040
+- Implemented: Added `_auto_seed(repo)` helper before the `generate` command; checks `repo.list_themes(1)` — if empty, loads themes/index.json and seeds via `repo.save_theme`; prints "Seeding community themes on first run..." to stderr; subsequent calls skip (cache non-empty)
+- Files changed: cli/main.py
+- **Learnings for future iterations:**
+  - Type the repo param as `object` to avoid forward reference issues; ruff doesn't flag attribute access on `object`
+  - The `generate` command now creates a `ThemeRepository` early (before provider resolution) — this is correct as it's needed for auto-seed and is also used by the mode functions
+  - `repo.list_themes(1)` is O(1) since it queries with LIMIT 1
+---

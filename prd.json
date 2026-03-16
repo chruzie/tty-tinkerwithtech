@@ -608,7 +608,7 @@
                 "Typecheck passes"
             ],
             "priority": 40,
-            "passes": false,
+            "passes": true,
             "notes": "CLI-9 from audit. Hidden prerequisite causing Tier 3 hits on first use."
         },
         {
