@@ -12,8 +12,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import date, datetime, timezone
-
+from datetime import UTC, date, datetime
 
 DAILY_GENERATION_LIMIT = int(os.environ.get("DAILY_GENERATION_LIMIT", "5"))
 BURST_WINDOW_SECONDS = int(os.environ.get("BURST_WINDOW_SECONDS", "60"))
@@ -38,7 +37,7 @@ class BurstCooldown(Exception):
 
 
 def _now_utc() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def check_rate_limit(ip_hash: str, repo) -> None:  # noqa: ANN001
@@ -66,7 +65,9 @@ def check_rate_limit(ip_hash: str, repo) -> None:  # noqa: ANN001
 
     # Burst check: count timestamps within the window
     raw_timestamps: str = state.get("burst_timestamps", "[]")
-    timestamps: list[str] = json.loads(raw_timestamps) if isinstance(raw_timestamps, str) else raw_timestamps
+    timestamps: list[str] = (
+        json.loads(raw_timestamps) if isinstance(raw_timestamps, str) else raw_timestamps
+    )
     cutoff = now.timestamp() - BURST_WINDOW_SECONDS
     recent = [ts for ts in timestamps if datetime.fromisoformat(ts).timestamp() > cutoff]
 
@@ -95,7 +96,9 @@ def increment_rate_limit(ip_hash: str, repo) -> None:  # noqa: ANN001
 
     # Prune old burst timestamps (keep only within window)
     cutoff = now.timestamp() - BURST_WINDOW_SECONDS
-    burst_timestamps = [ts for ts in burst_timestamps if datetime.fromisoformat(ts).timestamp() > cutoff]
+    burst_timestamps = [
+        ts for ts in burst_timestamps if datetime.fromisoformat(ts).timestamp() > cutoff
+    ]
     burst_timestamps.append(now.isoformat())
 
     # Increment offense count if this is a burst event

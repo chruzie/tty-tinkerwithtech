@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -95,8 +95,8 @@ def _metrics_auth(request: Request) -> None:
 
 
 try:
-    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest  # type: ignore[import]
     from fastapi import Depends
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest  # type: ignore[import]
 
     @app.get("/metrics", include_in_schema=False)
     async def metrics(request: Request, _auth: None = Depends(_metrics_auth)):
@@ -175,7 +175,8 @@ def generate(req: GenerateRequest, request: Request):
 
     # 2. Tier 1 — exact hash cache
     import hashlib as _hl
-    from generator.prompt import build_user_prompt, SYSTEM_PROMPT
+
+    from generator.prompt import SYSTEM_PROMPT, build_user_prompt
 
     query_hash = _hl.sha256(clean_prompt.encode()).hexdigest()
     cached_theme = repo.get_by_hash(query_hash)
@@ -206,11 +207,16 @@ def generate(req: GenerateRequest, request: Request):
                     cached=True,
                     provider=similar.get("provider") or "cache",
                 )
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001, S110
         pass  # embeddings not available — skip tier 2
 
     # 4. Rate limit check (only for actual LLM calls)
-    from api.rate_limit import BurstCooldown, RateLimitExceeded, check_rate_limit, increment_rate_limit
+    from api.rate_limit import (
+        BurstCooldown,
+        RateLimitExceeded,
+        check_rate_limit,
+        increment_rate_limit,
+    )
 
     try:
         check_rate_limit(ip_hash, repo)
@@ -228,7 +234,7 @@ def generate(req: GenerateRequest, request: Request):
             status_code=429,
             detail={
                 "error": "rate_limit_exceeded",
-                "reset_at": datetime.now(tz=timezone.utc).isoformat(),
+                "reset_at": datetime.now(tz=UTC).isoformat(),
                 "cooldown_seconds": exc.cooldown_seconds,
             },
         ) from exc
@@ -238,11 +244,13 @@ def generate(req: GenerateRequest, request: Request):
     if repo.get_daily_spend() >= _spend_cap:
         raise HTTPException(
             status_code=503,
-            detail={"error": "spend_cap_exceeded", "message": "Daily generation limit reached. Try again tomorrow."},
+            detail={
+                "error": "spend_cap_exceeded",
+                "message": "Daily generation limit reached. Try again tomorrow.",
+            },
         )
 
     # 5. LLM generation
-    from generator.prompt import build_user_prompt, SYSTEM_PROMPT
     from generator.validator import validate_theme
     from providers.registry import generate_with_fallback
 
