@@ -236,3 +236,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - The `generate` command now creates a `ThemeRepository` early (before provider resolution) — this is correct as it's needed for auto-seed and is also used by the mode functions
   - `repo.list_themes(1)` is O(1) since it queries with LIMIT 1
 ---
+
+## 2026-03-15 - US-041
+- Implemented: Replaced 6 individual provider buttons + Local LLM in mockup.html with two radio buttons (Free / BYOK); BYOK section has provider dropdown (Groq/Gemini/OpenAI/Claude/Mistral) + key input; generate button disabled when BYOK mode + empty key; removed all Local LLM HTML and JS (`applyLocalPreset`, `saveLocalConfig`, `testLocalConnection`); replaced `selectProvider` + `saveBYOKKey` with `selectProviderMode`, `onByokProviderChange`, `onByokKeyInput`; updated PRD §6.2 with two-mode selector table
+- Files changed: mockup.html, PRD.md
+- **Learnings for future iterations:**
+  - `_updateGenerateBtn()` is a shared helper called by all state changes (mode select, provider select, key input, clear) — keeps the disabled logic in one place
+  - The `status-provider` span is updated in each path of `selectProviderMode` and `onByokProviderChange`
+  - `byok-provider-label` span now initialized to "groq" (the default dropdown value) in HTML to match
+---

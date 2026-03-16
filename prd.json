@@ -624,7 +624,7 @@
                 "Tests pass"
             ],
             "priority": 41,
-            "passes": false,
+            "passes": true,
             "notes": "Simplification per user decision. Local LLM stays CLI-only. Also fixes WEB-1 (generate button enabled before key entered)."
         }
     ]
