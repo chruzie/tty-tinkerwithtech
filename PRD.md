@@ -434,3 +434,46 @@ tty-tinkerwithtech/
 | 6 | Community gallery — publish, browse, slug system | |
 | 7 | Security hardening — bandit, pip-audit CI, SSRF tests | |
 | 8 | Terraform IaC + DEPLOY.md | |
+
+---
+
+## Deployment
+
+**GCP Project:** `tinkerwithtech-214914`
+**Region:** `us-central1`
+**API:** Cloud Run (`tty-theme-api`)
+**Web:** Firebase Hosting (`tty-theme.dev`)
+
+### Remaining pre-deploy tasks
+
+1. **Restore global spend cap** — add `DAILY_SPEND_CAP` check to `POST /v1/generate` in `api/main.py` before the LLM call. Default `$1.00/day`. Set via Cloud Run env var `DAILY_SPEND_CAP=1.00`.
+
+2. **Update lock file** — run `uv sync` after v1.3 dep removals (typer, keyring, pillow, scikit-learn, imagehash removed) and commit the updated `uv.lock`.
+
+3. **Set provider-side quotas** — Gemini free tier enforces 1,500 req/day automatically. Groq free tier enforces its own limits. No action needed until upgrading to paid.
+
+### Secrets to provision
+
+```bash
+echo -n "your-gemini-key" | gcloud secrets create GEMINI_API_KEY \
+  --data-file=- --project=tinkerwithtech-214914
+
+echo -n "your-groq-key" | gcloud secrets create GROQ_API_KEY \
+  --data-file=- --project=tinkerwithtech-214914
+```
+
+### Cloud Run deploy command
+
+```bash
+gcloud run deploy tty-theme-api \
+  --image=gcr.io/tinkerwithtech-214914/tty-theme-api:latest \
+  --region=us-central1 \
+  --project=tinkerwithtech-214914 \
+  --min-instances=0 \
+  --max-instances=10 \
+  --memory=512Mi \
+  --concurrency=80 \
+  --service-account=tty-theme-api@tinkerwithtech-214914.iam.gserviceaccount.com \
+  --set-env-vars=ENVIRONMENT=production,GCP_PROJECT=tinkerwithtech-214914,FIRESTORE_PROJECT=tinkerwithtech-214914,DAILY_SPEND_CAP=1.00 \
+  --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest,GROQ_API_KEY=GROQ_API_KEY:latest
+```
