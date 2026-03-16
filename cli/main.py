@@ -146,7 +146,11 @@ def config_setup() -> None:
 
     typer.echo("tty-theme config wizard")
     typer.echo("─" * 40)
-    typer.echo("Press Enter to skip any provider.\n")
+    typer.echo("Local providers (no API key needed):")
+    typer.echo("  No API key needed if you have Ollama, LM Studio, or llamafile running locally.")
+    typer.echo("  tty-theme will auto-detect Ollama at localhost:11434.")
+    typer.echo("")
+    typer.echo("Cloud providers (optional — press Enter to skip):\n")
 
     providers = [
         ("gemini", "Google Gemini API key"),
