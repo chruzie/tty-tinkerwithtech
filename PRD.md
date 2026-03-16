@@ -1,10 +1,11 @@
 # Product Requirements Document
 ## tty-theme: AI Terminal Theme Generator — Ralph Implementation PRD
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Draft
 **Author:** chruzcruz
 **Date:** 2026-03-15
+**Change:** v1.2 — Removed image upload / image-based theme extraction. Prompt mode only.
 
 ---
 
@@ -20,7 +21,7 @@ This document doubles as an executable implementation guide. Each phase is self-
 | Phase | Name | Deliverable | Est. Effort | Status |
 |-------|------|-------------|-------------|--------|
 | 0 | Foundation | Repo scaffold, pyproject.toml, CI/CD pipeline | 1 day | ✓ done |
-| 1 | Core pipeline | CLI entrypoint, prompt + image modes, Ghostty + iTerm2 serializers, SQLite cache | 2 days | ← **next** |
+| 1 | Core pipeline | CLI entrypoint, prompt mode, Ghostty + iTerm2 serializers, SQLite cache | 2 days | ← **next** |
 | 2 | Provider system | **Simplified:** one `OpenAICompatProvider` class; local (Ollama/LM Studio/llamafile) + free cloud (Groq → Gemini) + 429-auto-fallback | 0.5 day | |
 | 3 | Similarity search | MiniLM embeddings, cosine similarity, tiered cache (exact → similarity → LLM) | 1 day | |
 | 4 | Local emulator env | Docker Compose + Firebase Emulator Suite (Firestore, Auth, Hosting, Prometheus) | 0.5 day | |
@@ -75,7 +76,7 @@ The following files exist and are non-empty:
 | `generator/llm.py` | Partial stub (34 lines) |
 | `cli/main.py` | **Missing — Phase 1** |
 | `modes/prompt_mode.py` | **Missing — Phase 1** |
-| `modes/image_mode.py` | **Missing — Phase 1** |
+| `modes/image_mode.py` | ~~Removed — image mode dropped~~ |
 | `providers/*.py` | **Missing — Phase 2** |
 | `api/main.py` | **Missing — Phase 4** |
 
@@ -303,10 +304,7 @@ The minimum to have the web UI talking to a real backend:
 
 ## 1. Overview
 
-`tty-theme` is an open source CLI tool (and optional web API) that generates terminal themes for multiple emulators from two distinct input modes:
-
-1. **Prompt mode** — Generate a theme from a natural-language inspiration query.
-2. **Image mode** — Extract a harmonious theme from any image (photo, screenshot, artwork).
+`tty-theme` is an open source CLI tool (and optional web API) that generates terminal themes for multiple emulators from natural-language prompts.
 
 Users can run the tool **entirely locally** using a model via Ollama, LM Studio, or llamafile — or configure an API key from any supported cloud provider. No cloud dependency is required.
 
@@ -316,10 +314,6 @@ tty-theme generate --prompt "cyberpunk neon rain" --target ghostty
 
 # iTerm2 output
 tty-theme generate --prompt "cyberpunk neon rain" --target iterm2
-
-# Image mode
-tty-theme generate --image ./wallpaper.jpg
-tty-theme generate --image https://example.com/photo.jpg
 ```
 
 ---
@@ -327,7 +321,6 @@ tty-theme generate --image https://example.com/photo.jpg
 ## 2. Goals
 
 - **G1:** Generate aesthetically coherent, Ghostty-compatible themes from text prompts.
-- **G2:** Extract harmonious themes from images using local color analysis (free path) with optional LLM refinement.
 - **G3:** Work fully offline — no cloud dependency required for the base path.
 - **G4:** Support any OpenAI-compatible local model server OR any major cloud LLM provider.
 - **G5:** Store and resolve API keys securely — never in plaintext config or logs.
@@ -343,7 +336,7 @@ tty-theme generate --image https://example.com/photo.jpg
 - Not a GUI theme editor.
 - Not a theme marketplace (phase 2 if community grows).
 - Not supporting tmux, Alacritty, WezTerm, or Kitty in v1 (planned via extension in v2).
-- Not storing user images on any server — images are processed ephemerally.
+- Not supporting image-based theme extraction — prompt mode only.
 
 ---
 
@@ -382,52 +375,6 @@ User Prompt
 
 ---
 
-### 4.2 Functionality B: Image-Based Theme Extraction
-
-**Input:** Image file (local path) or HTTPS URL
-**Output:** Theme file in the requested target format (Ghostty or iTerm2)
-
-**Pipeline:**
-```
-User Image (path or URL)
-    │
-    ▼
-[B1] Input validation
-    │   - Local: magic-byte check (PNG/JPG/WEBP/GIF only)
-    │   - URL: SSRF guard (https only, block RFC1918/loopback/link-local)
-    │
-    ▼
-[B2] Fetch/load image (size cap: 10MB, dim cap: 4096×4096)
-    │
-    ▼
-[B3] Compute perceptual hash (pHash) — used as cache key
-    │
-    ▼
-[B4] Cache lookup by pHash  ──HIT──▶ Return cached theme (free)
-    │ MISS
-    ▼
-[B5] Local color extraction (Pillow resize → k-means clustering, k=16)
-    │
-    ▼
-[B6] Algorithmic palette → Ghostty key mapping
-    │   - Darkest cluster → background
-    │   - Lightest cluster → foreground
-    │   - Highest-saturation clusters → ANSI palette 1–6
-    │   - Validate WCAG AA contrast ratio (≥4.5:1 fg/bg)
-    │
-    ▼
-[B7] (Optional) LLM refinement — only if --refine flag set
-    │
-    ▼
-[B8] Schema validation + cache by pHash + return theme
-```
-
-**Key design decisions:**
-- Steps B1–B6 are entirely local and free — no API call for the base path.
-- Image bytes are never stored — only the pHash and resulting theme.
-
----
-
 ## 5. Architecture
 
 ### 5.1 Component Map
@@ -437,8 +384,7 @@ ghostty-theme/
 ├── cli/
 │   └── main.py              # Typer CLI entry point
 ├── modes/
-│   ├── prompt_mode.py       # Functionality A pipeline
-│   └── image_mode.py        # Functionality B pipeline
+│   └── prompt_mode.py       # Prompt pipeline
 ├── generator/
 │   ├── prompt.py            # LLM prompt templates
 │   ├── llm.py               # Provider-agnostic LLM client
@@ -447,11 +393,6 @@ ghostty-theme/
 │       ├── base.py              # Abstract ThemeSerializer interface
 │       ├── ghostty.py           # Ghostty key=value serializer
 │       └── iterm2.py            # iTerm2 .itermcolors XML plist serializer
-├── image/
-│   ├── loader.py            # Safe image loading (local + remote)
-│   ├── extractor.py         # k-means color extraction
-│   ├── mapper.py            # Palette → Ghostty key mapping
-│   └── phash.py             # Perceptual hash computation
 ├── cache/
 │   ├── db.py                # SQLite CRUD (repository pattern)
 │   └── embeddings.py        # Local MiniLM embeddings + cosine similarity
@@ -476,7 +417,6 @@ ghostty-theme/
 │   └── ghostty_theme.json   # Ghostty color key schema
 └── tests/
     ├── test_prompt_mode.py
-    ├── test_image_mode.py
     ├── test_security.py
     └── test_providers.py
 ```
@@ -662,17 +602,6 @@ Keys are cleared on "Clear Keys" button click or `localStorage.clear()`. They pe
 | Unicode abuse / homoglyphs  | NFKC normalize to ASCII before caching or embedding.                       |
 | Cost amplification          | Similarity dedup — semantically equivalent queries share cached results.   |
 
-### 7.2 Image Mode — Input Safety
-
-| Threat                        | Mitigation                                                              |
-|-------------------------------|-------------------------------------------------------------------------|
-| SSRF via remote URLs          | Resolve hostname → block RFC1918, loopback (127.0.0.0/8), link-local (169.254/16), IPv6 `::1`. Allow only `https://`. Timeout: 10s. |
-| Malicious image content       | Validate magic bytes (not extension). Cap: 10MB, 4096×4096 px. Set `PIL.Image.MAX_IMAGE_PIXELS`. |
-| ZIP bombs / decompression bombs | Pillow's `DecompressionBombWarning` is promoted to an error.          |
-| Polyglot files                | Strip EXIF/metadata on load (`ImageOps.exif_transpose` + `info` cleared). Never execute image data. |
-| Path traversal (local files)  | Resolve to absolute path, confirm it's within CWD or `~/`.             |
-| Metadata / privacy leakage    | Only pHash and resulting theme stored. Image bytes discarded after processing. |
-
 ### 7.3 API Key & Secrets Security
 
 | Risk                            | Mitigation                                                            |
@@ -719,8 +648,7 @@ Keys are cleared on "Clear Keys" button click or `localStorage.clear()`. They pe
 |----------------------------|-----------------------------------------------------------------------|
 | IP-based rate limiting     | Token bucket: 10 req/min, 50 req/hour per IP                         |
 | Per-key rate limiting      | 100 req/day per issued API key (hard cap)                            |
-| Image size enforcement     | Nginx/Caddy rejects > 10MB before app sees it                        |
-| Request timeout            | 30s hard timeout on LLM calls; 10s on image fetch                   |
+| Request timeout            | 30s hard timeout on LLM calls                                        |
 | Spend circuit breaker      | If hourly cloud spend > threshold: disable AI tier, serve cache-only  |
 | Abuse detection            | Log query hashes (not content) + IP hash. Flag IPs with > 50 unique queries/hour. |
 | Bot mitigation             | Optional CAPTCHA on web UI for unauthenticated requests              |
@@ -729,7 +657,6 @@ Keys are cleared on "Clear Keys" button click or `localStorage.clear()`. They pe
 
 | Principle               | Implementation                                                        |
 |-------------------------|-----------------------------------------------------------------------|
-| No image storage        | Images processed in memory only. Only pHash stored.                  |
 | No raw query storage    | `privacy_mode = true` (default): only SHA256 hash of normalized query stored — not the raw text. |
 | No PII collected        | CLI: no accounts. API: email only for key issuance, never stored with queries. |
 | Local-first by default  | Default config uses Ollama + local SQLite. Zero data leaves the machine. |
@@ -885,18 +812,6 @@ User:
 Inspiration: {sanitized_query}
 ```
 
-### 9.2 Image Refinement (optional, --refine)
-
-```
-System:
-You are a terminal color theme designer. Refine the base palette below into a Ghostty theme.
-Output ONLY key=value pairs. Same rules as above.
-
-User:
-Base palette (hex colors): {color_list}
-Optional context: {optional_user_description}
-```
-
 ---
 
 ## 10. Output Formats
@@ -1000,9 +915,6 @@ tty-theme generate --prompt "cyberpunk neon rain" --target iterm2
 # Generate for both at once
 tty-theme generate --prompt "cyberpunk neon rain" --target ghostty --target iterm2
 
-# Image mode, iTerm2 output
-tty-theme generate --image ./wallpaper.jpg --target iterm2
-
 # Generate + install (auto-detects install path per target)
 tty-theme generate --prompt "tokyo midnight" --target ghostty --install --name "tokyo-midnight"
 tty-theme generate --prompt "tokyo midnight" --target iterm2 --install --name "tokyo-midnight"
@@ -1031,9 +943,9 @@ tty-theme config status
 ```sql
 CREATE TABLE themes (
     id           INTEGER PRIMARY KEY,
-    query_hash   TEXT NOT NULL,          -- SHA256 of normalized query, OR pHash of image
+    query_hash   TEXT NOT NULL,          -- SHA256 of normalized query
     query_raw    TEXT,                   -- raw query (NULL when privacy_mode = true)
-    input_type   TEXT NOT NULL,          -- 'prompt' | 'image'
+    input_type   TEXT NOT NULL,          -- 'prompt'
     name         TEXT,
     theme_data   TEXT NOT NULL,          -- raw key=value theme string
     embedding    TEXT,                   -- JSON array of float32 values (never pickle)
@@ -1084,8 +996,6 @@ CREATE TABLE audit_log (
 | Hosting             | Local                            | Cloud Run (min-instances=0) + Firebase Hosting |
 | DB                  | SQLite                           | Firestore (native vector search via `FindNearest`) |
 | Cache               | SQLite                           | Firestore (replaces Redis — no idle cost)     |
-| Image processing    | Pillow + scikit-learn (k-means)  | Same                                          |
-| Perceptual hash     | `imagehash`                      | Same                                          |
 | Embeddings          | `sentence-transformers` MiniLM   | Same model, Firestore vector field storage    |
 | Embedding storage   | JSON array in SQLite TEXT column | Firestore vector field (cosine via `FindNearest`) |
 | Secret storage      | `keyring` (OS keychain)          | Secret Manager (GCP)                          |
@@ -1102,10 +1012,8 @@ CREATE TABLE audit_log (
 
 | Scenario                              | Cost per query |
 |---------------------------------------|----------------|
-| Cache hit (prompt or image)           | $0.00          |
-| Similarity match (prompt mode)        | $0.00          |
-| Image extraction, base path (no LLM) | $0.00          |
-| Image extraction + LLM refine (Haiku)| ~$0.002        |
+| Cache hit                             | $0.00          |
+| Similarity match                      | $0.00          |
 | Prompt → Ollama / local              | $0.00          |
 | Prompt → Groq (free tier)            | $0.00          |
 | Prompt → Gemini Flash                | ~$0.0005       |
@@ -1113,8 +1021,7 @@ CREATE TABLE audit_log (
 
 **Projected hosted API cost (1k req/day):**
 - 70% cache hits: $0.00
-- 20% image extraction (no refine): $0.00
-- 10% LLM generation (Haiku): ~$0.10/day → **~$3/month**
+- 30% LLM generation (Haiku): ~$0.30/day → **~$9/month**
 
 Spend circuit breaker triggers above $10/day (configurable).
 
@@ -1184,7 +1091,7 @@ CREATE TABLE community_themes (
     ghostty_data    TEXT,                          -- Ghostty key=value output (NULL if not published)
     iterm2_data     TEXT,                          -- iTerm2 XML plist output (NULL if not published)
     palette_json    TEXT NOT NULL,                 -- JSON array of 16 hex colors for preview strip
-    source          TEXT DEFAULT 'ai',             -- 'ai' | 'image' | 'manual'
+    source          TEXT DEFAULT 'ai',             -- 'ai' | 'manual'
     provider        TEXT,                          -- LLM used (NULL if local/manual)
     tags            TEXT[],                        -- searchable tags
     download_count  INTEGER DEFAULT 0,
@@ -1294,8 +1201,7 @@ tty-theme share "cyberpunk-neon-rain"
 | 2     | Provider system (Ollama, LM Studio, llamafile, cloud adapters), config wizard |
 | 2b    | Prompt mode: LLM generator (Ollama + Claude Haiku), validator, caching    |
 | 2c    | Output serializers: Ghostty + iTerm2, ThemeSerializer base class          |
-| 3     | Image mode: safe loader + SSRF guard + k-means + pHash cache              |
-| 4     | Embedding similarity search (MiniLM, cosine, JSON-stored vectors)         |
+| 3     | Embedding similarity search (MiniLM, cosine, JSON-stored vectors)         |
 | 5     | Pre-seeded theme index (50 themes, licensed)                              |
 | 6     | Rate limiting, spend circuit breaker, audit log                           |
 | 7     | `--install` flag, Ghostty + iTerm2 install path integration               |
@@ -1311,7 +1217,6 @@ tty-theme share "cyberpunk-neon-rain"
 | Layer | Threats | Controls |
 |-------|---------|----------|
 | Input — prompt | Injection, jailbreak, offensive content, cost amplification | Input sanitization, structural output validation, similarity dedup, blocklist |
-| Input — image | SSRF, malicious files, path traversal, ZIP bombs | SSRF guard, magic-byte check, size/dim caps, EXIF strip |
 | LLM | Prompt injection via user input, model hallucination | Labeled input field, structural parsing only, retry on deviation |
 | Auth | Account takeover, throwaway accounts | GitHub OAuth only, no email/password |
 | API keys | Leakage in logs, config, git, ps output | Secret Manager, keyring, log scrubber, git-secrets pre-commit hook |
@@ -1538,7 +1443,6 @@ GA4 tracks usage to guide product decisions. Privacy-first implementation.
 | Event | Trigger | Parameters |
 |-------|---------|------------|
 | `generate_prompt` | User submits prompt | `provider`, `tier_used`, `target_terminal` |
-| `generate_image` | User submits image | `has_refine`, `target_terminal` |
 | `theme_copy` | Copy button clicked | `format` (ghostty/iterm2), `slug` |
 | `theme_install` | Install button clicked | `target_terminal`, `slug` |
 | `theme_share` | Share button clicked | `slug` |
@@ -1694,7 +1598,7 @@ Four specialized agents reviewed the codebase in parallel. Findings are logged h
 
 | ID | File | Lines | Issue |
 |----|------|-------|-------|
-| SEC-C1 | `security/ssrf_guard.py` + `image/loader.py` | 36–51, 51 | **DNS rebinding / TOCTOU** — `check_url()` resolves DNS once; `httpx.get()` re-resolves independently. Attacker-controlled DNS can return a safe IP on check then 169.254.169.254 on fetch. |
+| SEC-C1 | `security/ssrf_guard.py` | 36–51 | **DNS rebinding / TOCTOU** — `check_url()` resolves DNS once; `httpx.get()` re-resolves independently. *(image/loader.py reference removed — image mode dropped)* |
 | SEC-C2 | `security/ssrf_guard.py` | 9–18 | **SSRF blocklist gaps** — Missing `0.0.0.0/8`, `100.64.0.0/10` (CGNAT), and IPv4-mapped IPv6 (`::ffff:127.0.0.1`). Bypass via `https://0.0.0.0/` or `https://[::ffff:169.254.169.254]/`. |
 
 **Fixes:** SEC-C1: resolve DNS once, pass resolved IP to httpx via custom transport. SEC-C2: add missing ranges; check `ipaddress.ip_address(...).ipv4_mapped`.
@@ -1715,8 +1619,8 @@ Four specialized agents reviewed the codebase in parallel. Findings are logged h
 | ID | File | Issue |
 |----|------|-------|
 | SEC-M1 | `api/main.py:54–60` | CORS: `allow_methods=["*"]` + `allow_headers=["*"]` with `allow_credentials=True` — overly permissive. |
-| SEC-M2 | `image/loader.py:51` | HTTP 3xx response not explicitly rejected; confusing error surface on redirect. |
-| SEC-M3 | `image/loader.py:16` | WEBP magic check matches any RIFF container (WAV, AVI). `b"\x00\x00\x00"` catch-all too broad. |
+| SEC-M2 | ~~`image/loader.py`~~ | ~~HTTP 3xx not handled.~~ *N/A — image mode removed.* |
+| SEC-M3 | ~~`image/loader.py`~~ | ~~WEBP magic check too broad.~~ *N/A — image mode removed.* |
 | SEC-M4 | `security/input_sanitizer.py:13–44` | ASCII control characters (U+0000–U+001F) not stripped — log injection and LLM prompt injection risk. |
 | SEC-M5 | `security/input_sanitizer.py:27–44` | Docstring says raises `ValueError` on empty input; function silently returns `""`. Broken contract. |
 | SEC-M6 | `security/secrets.py:47` | `name` interpolated directly into Secret Manager path — no allowlist validation, path injection risk. |
@@ -1736,7 +1640,7 @@ Parameterized SQL (no injection risk), JSON-only embeddings (no pickle), OS keyc
 ### 21.2 Performance Audit
 
 **Reviewed by:** Performance Engineer Agent  
-**Scope:** Concurrency, caching, DB access, image pipeline, startup latency
+**Scope:** Concurrency, caching, DB access, startup latency
 
 #### High
 
@@ -1754,7 +1658,7 @@ Parameterized SQL (no injection risk), JSON-only embeddings (no pickle), OS keyc
 | PERF-M1 | `cache/db.py:21–24` | New SQLite connection per operation — 5+ open/close cycles per request. |
 | PERF-M2 | `providers/registry.py:49–50` | Serial health checks, uncached — 3 local providers × 2s timeout = 6s dead wait when all are offline. |
 | PERF-M3 | `providers/registry.py:43–98` | Double health check — `resolve_provider()` and `generate_with_fallback()` each call `health_check()` independently. |
-| PERF-M4 | `image/loader.py:67–71` | EXIF strip via `list(img.getdata())` — materializes millions of Python tuples; 500MB+ peak memory on large images. Use `img.copy()` instead. |
+| PERF-M4 | ~~`image/loader.py`~~ | ~~EXIF strip memory spike.~~ *N/A — image mode removed.* |
 | PERF-M5 | `cache/firestore_db.py:108–121` | `get_all_embeddings` fetches entire Firestore `themes` collection including full `theme_data` — 20MB+ per cache miss at 10k themes. Use field mask / Firestore vector search. |
 | PERF-M6 | `cache/embeddings.py:56–58` | Cosine similarity computed one-at-a-time in Python loop. Vectorize with `query_vec @ matrix.T`. |
 | PERF-M7 | `api/middleware.py:34–35` | Rate limit `defaultdict` never evicted — slow memory leak under sustained unique-IP traffic. |
@@ -1762,7 +1666,7 @@ Parameterized SQL (no injection risk), JSON-only embeddings (no pickle), OS keyc
 
 #### Low
 
-PERF-L1: `scikit-learn` (~150MB) used only for 16-cluster k-means on 150×150 image — consider `PIL.quantize()`. PERF-L2: `sentence-transformers` (~2GB PyTorch) listed as core dep, not optional — breaks `uv sync` for users who don't need embeddings. PERF-L3: Full-res image kept in memory through pHash + k-means — downsample once to 512×512 at pipeline start. PERF-L4: `follow_redirects=False` breaks legitimate CDN redirects (usability, not just security).
+PERF-L1: ~~`scikit-learn` used only for k-means on images~~ *N/A — image mode removed.* PERF-L2: `sentence-transformers` (~2GB PyTorch) listed as core dep, not optional — breaks `uv sync` for users who don't need embeddings. PERF-L3: ~~Full-res image in memory~~ *N/A — image mode removed.* PERF-L4: `follow_redirects=False` breaks legitimate CDN redirects (usability, not just security).
 
 ---
 
@@ -1782,12 +1686,12 @@ PERF-L1: `scikit-learn` (~150MB) used only for 16-cluster k-means on 150×150 im
 
 | ID | File | Lines | Bug |
 |----|------|-------|-----|
-| BUG-03 | `image/loader.py` | 15, 63 | RIFF magic check catches non-image RIFF files (WAV, AVI). `PIL.UnidentifiedImageError` (`OSError`) not caught — propagates as unhandled exception instead of documented `ValueError`. |
-| BUG-04 | `image/loader.py` | 51–52 | HTTP 3xx not handled — surfaces as confusing `HTTPStatusError` to user. |
-| BUG-05 | `image/extractor.py` | 18 | No defensive mode check — `reshape(-1, 3)` assumes RGB; no guard if called with non-RGB image. |
-| BUG-06 | `modes/image_mode.py` | 73 | Wrong prompt builder used for LLM refinement — uses `build_prompt()` (text-inspiration prompt) instead of `build_refine_prompt()` (palette-specific system prompt). Degrades refinement quality. |
+| BUG-03 | ~~`image/loader.py`~~ | — | *N/A — image mode removed.* |
+| BUG-04 | ~~`image/loader.py`~~ | — | *N/A — image mode removed.* |
+| BUG-05 | ~~`image/extractor.py`~~ | — | *N/A — image mode removed.* |
+| BUG-06 | ~~`modes/image_mode.py`~~ | — | *N/A — image mode removed.* |
 | BUG-07 | `api/middleware.py` | 55 | Rate limiter short-circuit — minute token consumed before hour bucket checked. If hour bucket exhausted, minute token is permanently burned. |
-| BUG-08 | `api/main.py` | 135, 145 | `tier_used` hardcoded: always `3` for prompt, always `1` for image, regardless of actual cache tier used. API response contract is misleading. |
+| BUG-08 | `api/main.py` | 135, 145 | `tier_used` hardcoded — always `3` for prompt regardless of actual cache tier used. API response contract is misleading. |
 
 #### Medium
 
@@ -1798,7 +1702,7 @@ PERF-L1: `scikit-learn` (~150MB) used only for 16-cluster k-means on 150×150 im
 | BUG-11 | `modes/prompt_mode.py:120` | Cost estimate hardcodes `* 0.5` (assumes 500 tokens). Actual token count never measured. Spend cap enforcement inaccurate. |
 | BUG-12 | `providers/openai_compat.py:79` | `raise_for_status()` loses API error response body — provider error detail (e.g. "model not found") discarded. |
 | BUG-13 | `cache/firestore_db.py:71–82` | Composite Firestore index on `(query_hash, created_at DESC)` required but not declared in `firestore.indexes.json`. Runtime `FailedPrecondition` exception unhandled. |
-| BUG-14 | `image/loader.py:16–17` | `b"\x00\x00\x00"` catch-all magic entry — any file starting with 3 null bytes passes type check. |
+| BUG-14 | ~~`image/loader.py`~~ | *N/A — image mode removed.* |
 | BUG-15 | `cli/main.py:129–130` | `list_themes(10000)` called twice in `config status` — once for display, once for count. |
 
 #### Low
@@ -1816,7 +1720,7 @@ BUG-16: `GhosttySerializer.file_extension()` returns `".ghostty"` but `cli/main.
 
 | ID | Location | Issue |
 |----|----------|-------|
-| CLI-1 | `cli/main.py:55–57` | Error "provide --prompt or --image" gives no example or next step. First-time user is stranded. |
+| CLI-1 | `cli/main.py:55–57` | Error "provide --prompt" gives no example or next step. First-time user is stranded. |
 | CLI-2 | `cli/main.py:71–73` | Broad `except Exception` collapses all errors to opaque message. No actionable guidance per error type. |
 | CLI-3 | `cli/main.py:63–69` | Zero progress feedback during LLM calls (2–15s). Process hangs silently. |
 | CLI-4 | `cli/main.py:77–82` | `--install` silently overwrites existing theme. No confirmation, no overwrite warning, no "how to activate" instruction post-install. |
@@ -1835,7 +1739,7 @@ CLI-10: No blank line between theme output and install-path message when `--inst
 |----|----------|-------|
 | WEB-1 | `mockup.html:229–265` | Generate button enabled before BYOK key entered — silent failure on submit. |
 | WEB-2 | `mockup.html:401, 452` | No loading state designed — no spinner, no progress steps, no disabled button during async generation (1–15s). |
-| WEB-3 | `mockup.html:411–458` | Drop zone missing `ondrop` handler; no keyboard (Enter/Space) alternative for file drop. |
+| WEB-3 | ~~`mockup.html:411–458`~~ | ~~Drop zone missing `ondrop` handler.~~ *N/A — image upload removed.* |
 | WEB-4 | `mockup.html:303–326` | BYOK notice contradicts itself — says "never sent to server" then "passed ephemerally through server." Needs split notice per provider mode. |
 | WEB-5 | `mockup.html:59–63` | `Space Mono` applied globally — harms prose readability and WCAG 1.4.12 (Text Spacing) compliance for security notices and labels. |
 
@@ -1859,10 +1763,9 @@ WEB-15: Page `<title>` says "ghostty-theme" (wrong product name); GA4 ID is plac
 | P1 | SEC-H1 through H6 | Security | Rate limit bypass, unauth endpoints, path traversal |
 | P1 | PERF-H1 | Performance | Sync blocking in async endpoint — fixes all concurrency |
 | P1 | PERF-H4 | Performance | HTTP connection reuse — 100–300ms per LLM call |
-| P1 | BUG-06 | Bug | Wrong prompt builder for image refinement |
 | P2 | PERF-H2, H3 | Performance | O(N) embedding scan + cold start model load |
-| P2 | SEC-M1 through M8 | Security | CORS, magic bytes, input sanitizer contract, audit logging |
-| P2 | BUG-03 through 08 | Bug | Image loader errors, rate limiter logic, API tier reporting |
+| P2 | SEC-M1 through M8 | Security | CORS, input sanitizer contract, audit logging *(SEC-M2/M3 N/A)* |
+| P2 | BUG-07, BUG-08 | Bug | Rate limiter logic, API tier reporting *(BUG-03–06 N/A — image mode removed)* |
 | P3 | CLI-1 through 4 | UX | Error messages, progress feedback, install flow |
 | P3 | WEB-1 through 5 | UX | Loading states, BYOK validation, drop zone, accessibility |
 | P4 | PERF-L2 | Performance | Move `sentence-transformers` to optional dependency |
