@@ -201,3 +201,13 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - After moving sentence-transformers out of core deps, the except ImportError in prompt_mode tier-2 must become except (ImportError, RuntimeError) because the module itself imports fine but raises RuntimeError at runtime
   - tomli conditional (python_version < '3.11') is unreachable with requires-python>=3.11 — tomllib is stdlib
 ---
+
+## 2026-03-15 - US-035
+- Implemented: Changed ThemeRepository to open `self._conn = sqlite3.connect(str(db_path), check_same_thread=False)` once in `__init__`; set `row_factory` on it; removed `_connect()` helper; replaced all `with self._connect() as conn: conn.X(...)` with either `with self._conn:` (for writes needing transaction) or bare `self._conn.X(...)` (for reads); added `close()` and `__del__` with `# noqa: BLE001, S110` to suppress ruff
+- Files changed: cache/db.py
+- **Learnings for future iterations:**
+  - Read-only queries (SELECT) don't need `with self._conn:` — bare `self._conn.execute(...).fetchone()` is fine; the context manager is only needed for writes to get transaction auto-commit/rollback
+  - `sqlite3.connect(check_same_thread=False)` is required when FastAPI dispatches sync endpoints to a thread pool; the connection is created on the main thread but used on worker threads
+  - `__del__` close guard must suppress with `# noqa: BLE001, S110` (ruff S110 = try-except-pass)
+  - `executescript` in `init_db` implicitly commits pending transactions, so `with self._conn:` around it is safe
+---
