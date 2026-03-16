@@ -30,6 +30,18 @@ def _get_repo():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Validate DAILY_SPEND_CAP at startup so misconfiguration fails fast
+    _cap_raw = os.environ.get("DAILY_SPEND_CAP", "10.0")
+    try:
+        _cap = float(_cap_raw)
+        if _cap <= 0:
+            raise ValueError("must be positive")
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Invalid DAILY_SPEND_CAP={_cap_raw!r}: {exc}. "
+            "Set a positive float (e.g. DAILY_SPEND_CAP=10.0)."
+        ) from exc
+
     # Initialise DB on startup
     repo = _get_repo()
     app.state.repo = repo
@@ -69,8 +81,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Api-Key"],
 )
 
 # Register rate-limit + audit middleware

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import time
 from collections.abc import Callable
@@ -11,6 +12,8 @@ from cachetools import TTLCache
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+
+logger = logging.getLogger(__name__)
 
 # ── Token bucket store (in-process; swap to Redis for multi-replica) ──────────
 
@@ -120,7 +123,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                     cost_usd=0.0,
                     status=str(response.status_code),
                 )
-            except Exception:  # noqa: BLE001, S110
-                pass  # Never let audit failure break the response
+            except Exception as e:  # noqa: BLE001
+                logger.warning("audit log failed: %s", e)
 
         return response
