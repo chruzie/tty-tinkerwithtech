@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -28,7 +28,8 @@ def repo(tmp_path: Path) -> ThemeRepository:
 # ── DB layer tests (US-007) ────────────────────────────────────────────────────
 
 def test_upsert_then_get_returns_values(repo: ThemeRepository) -> None:
-    repo.upsert_rate_limit("aabbccdd", 3, "2026-03-15", ["2026-03-15T12:00:00+00:00"], 0)
+    today = date.today().isoformat()
+    repo.upsert_rate_limit("aabbccdd", 3, today, [f"{today}T12:00:00+00:00"], 0)
     state = repo.get_rate_limit("aabbccdd")
     assert state is not None
     assert state["daily_count"] == 3

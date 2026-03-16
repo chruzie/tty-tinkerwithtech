@@ -12,10 +12,10 @@ class _MockProvider:
     def __init__(self, response: str) -> None:
         self._response = response
 
-    def generate(self, prompt: dict[str, str]) -> str:
+    def generate(self, prompt: dict[str, str]) -> tuple[str, int]:
         if self._response == "__raise__":
             raise RuntimeError("network error")
-        return self._response
+        return self._response, 10
 
 
 def test_build_prompt_contains_query() -> None:
@@ -41,8 +41,9 @@ def test_build_refine_prompt() -> None:
 def test_llm_client_returns_response() -> None:
     client = LLMClient()
     provider = _MockProvider("background = #000000\nforeground = #ffffff")
-    result = client.generate({"system": "s", "user": "u"}, provider)
+    result, tokens = client.generate({"system": "s", "user": "u"}, provider)
     assert "background" in result
+    assert isinstance(tokens, int)
 
 
 def test_llm_client_raises_on_empty_response() -> None:
