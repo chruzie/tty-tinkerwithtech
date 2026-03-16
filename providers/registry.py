@@ -71,7 +71,7 @@ def generate_with_fallback(
     prompt: str,
     system: str,
     preferred: str | None = None,
-) -> str:
+) -> tuple[str, str]:
     """Generate a theme string with automatic 429 fallback across providers.
 
     Tries gemini first (server-side default), then groq on HTTP 429.
@@ -83,7 +83,7 @@ def generate_with_fallback(
         preferred: Optional provider name to try first.
 
     Returns:
-        Raw LLM output string.
+        Tuple of (raw LLM output string, provider name used).
 
     Raises:
         RuntimeError: if all available providers are exhausted (throttled or failed).
@@ -101,7 +101,7 @@ def generate_with_fallback(
     for provider in available:
         try:
             content, _tokens = provider.generate(prompt_dict)
-            return content
+            return content, provider.name
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 429:  # noqa: PLR2004
                 errors.append(f"{provider.name}: throttled (429)")

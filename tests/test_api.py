@@ -53,7 +53,7 @@ async def test_health_v1(client):
 @pytest.mark.asyncio
 async def test_generate_returns_theme_data_and_slug(client):
     with (
-        patch("providers.registry.generate_with_fallback", return_value=_VALID_THEME),
+        patch("providers.registry.generate_with_fallback", return_value=(_VALID_THEME, "gemini")),
         patch("generator.validator.validate_theme", return_value=None),
         patch("cache.embeddings.embed", side_effect=ImportError),
     ):
@@ -63,8 +63,8 @@ async def test_generate_returns_theme_data_and_slug(client):
         data = resp.json()
         assert "theme_data" in data
         assert "slug" in data
-        assert "cached" in data
-        assert "provider" in data
+        assert data["cached"] is False
+        assert data["provider"] == "gemini"
 
 
 @pytest.mark.asyncio

@@ -257,7 +257,7 @@ def generate(req: GenerateRequest, request: Request):
 
     try:
         user_prompt = build_user_prompt(clean_prompt)
-        theme_raw = generate_with_fallback(user_prompt, SYSTEM_PROMPT)
+        theme_raw, provider_name = generate_with_fallback(user_prompt, SYSTEM_PROMPT)
         validate_theme(theme_raw)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -272,7 +272,7 @@ def generate(req: GenerateRequest, request: Request):
         from cache.embeddings import embed
 
         embedding = embed(clean_prompt)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001, S110
         embedding = None
 
     repo.save_theme(
@@ -283,7 +283,7 @@ def generate(req: GenerateRequest, request: Request):
         name=slug,
         embedding=embedding,
         source="ai",
-        provider="generated",
+        provider=provider_name,
     )
 
     # 7. Increment rate limit counter
@@ -293,7 +293,7 @@ def generate(req: GenerateRequest, request: Request):
         theme_data=theme_raw,
         slug=slug,
         cached=False,
-        provider="generated",
+        provider=provider_name,
     )
 
 

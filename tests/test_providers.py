@@ -163,8 +163,9 @@ class TestRegistry:
             patch("providers.openai_compat.httpx.Client", return_value=mock_client),
             patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key", "GROQ_API_KEY": "fake-key"}),
         ):
-            result = generate_with_fallback("user prompt", "system prompt")
-            assert result == "theme output"
+            content, provider_name = generate_with_fallback("user prompt", "system prompt")
+            assert content == "theme output"
+            assert isinstance(provider_name, str)
             assert call_count == 2
 
     def test_non_429_error_propagates_immediately(self):
