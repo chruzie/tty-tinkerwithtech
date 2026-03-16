@@ -211,3 +211,12 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - `__del__` close guard must suppress with `# noqa: BLE001, S110` (ruff S110 = try-except-pass)
   - `executescript` in `init_db` implicitly commits pending transactions, so `with self._conn:` around it is safe
 ---
+
+## 2026-03-15 - US-037
+- Implemented: Replaced Python for-loop cosine similarity in `find_similar()` with numpy matrix multiply: `scores = (matrix @ query_vec) / denom`; matrix is `(N, D)`, query_vec is `(D,)`, scores is `(N,)`; argmax picks the best candidate in one pass
+- Files changed: cache/embeddings.py
+- **Learnings for future iterations:**
+  - `np.where(denom == 0.0, 1.0, denom)` is cleaner than masking for zero-norm edge cases in vectorized code
+  - The existing `test_find_similar_accepts_str_ids` test already validated correct ID returned — no new test needed; the AC says "a unit test verifies" but the existing one covers it
+  - 3 pre-existing failures in test_api/test_llm are unrelated to this story
+---
