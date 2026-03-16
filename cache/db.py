@@ -29,7 +29,7 @@ class ThemeRepository:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS themes (
                     id          INTEGER PRIMARY KEY,
-                    query_hash  TEXT NOT NULL,
+                    query_hash  TEXT NOT NULL UNIQUE,
                     query_raw   TEXT,
                     input_type  TEXT NOT NULL,
                     name        TEXT,
@@ -89,7 +89,7 @@ class ThemeRepository:
         with self._connect() as conn:
             cur = conn.execute(
                 """
-                INSERT INTO themes
+                INSERT OR IGNORE INTO themes
                     (query_hash, query_raw, input_type, name, theme_data,
                      embedding, source, provider, cost_usd)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

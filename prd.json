@@ -1,7 +1,7 @@
 {
   "project": "tty-theme",
   "branchName": "ralph/audit-remediation",
-  "description": "tty-theme — Audit remediation. Fixes for P0/P1 findings from the 2026-03-15 multi-agent security, performance, bug, and UX review. Stories ordered by dependency: security foundations first, then performance, then bugs, then UX.",
+  "description": "tty-theme \u2014 Audit remediation. Fixes for P0/P1 findings from the 2026-03-15 multi-agent security, performance, bug, and UX review. Stories ordered by dependency: security foundations first, then performance, then bugs, then UX.",
   "userStories": [
     {
       "id": "US-001",
@@ -304,7 +304,7 @@
         "If it exists, print a warning 'Theme <name> already exists at <path>. Use --force to overwrite.' and return None without writing",
         "Add --force / -f bool flag to the generate command; if --force is passed, write without checking",
         "After a successful Ghostty install, print to stderr: 'To activate: add `theme = <name>` to ~/.config/ghostty/config'",
-        "After a successful iTerm2 install, print to stderr: 'To activate: open iTerm2 → Preferences → Profiles → Colors → Color Presets → <name>'",
+        "After a successful iTerm2 install, print to stderr: 'To activate: open iTerm2 \u2192 Preferences \u2192 Profiles \u2192 Colors \u2192 Color Presets \u2192 <name>'",
         "Typecheck passes"
       ],
       "priority": 20,
@@ -318,7 +318,7 @@
       "acceptanceCriteria": [
         "Move sentence-transformers from [project.dependencies] to [project.optional-dependencies] under key 'embeddings' in pyproject.toml",
         "In cache/embeddings.py, wrap the import in try/except ImportError and raise a clear RuntimeError('Install tty-theme[embeddings] to enable similarity search') if not available",
-        "In modes/prompt_mode.py, the ImportError guard for sentence-transformers already exists — verify it correctly skips tier-2 and falls through to tier-3",
+        "In modes/prompt_mode.py, the ImportError guard for sentence-transformers already exists \u2014 verify it correctly skips tier-2 and falls through to tier-3",
         "uv sync installs without sentence-transformers by default",
         "uv sync --extra embeddings installs it",
         "Typecheck passes"
@@ -340,6 +340,292 @@
       "priority": 22,
       "passes": true,
       "notes": "BUG-17 and BUG-16 from audit."
+    },
+    {
+      "id": "US-023",
+      "title": "Fix Firestore ID type mismatch in tier-2 cache (BUG-02)",
+      "description": "As a developer, I need Firestore theme IDs to be handled consistently as strings throughout the cache layer so tier-2 similarity cache hits work correctly in API mode.",
+      "acceptanceCriteria": [
+        "In cache/firestore_db.py get_all_embeddings(), return list[tuple[str, list[float]]] (IDs already strings \u2014 confirm no cast to int)",
+        "In cache/firestore_db.py find_similar(), return type is str | None (not int | None)",
+        "In cache/firestore_db.py get_by_id(), accept str id parameter (not int)",
+        "Update modes/prompt_mode.py tier-2 cache branch: pass the str ID from find_similar() directly to get_by_id() without int() conversion",
+        "Add a unit test verifying that a Firestore str-keyed embedding round-trips through find_similar \u2192 get_by_id and returns the correct theme_data",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": true,
+      "notes": "BUG-02 from audit. P0 \u2014 silent tier-2 cache miss on every Firestore API request."
+    },
+    {
+      "id": "US-024",
+      "title": "Fix rate limiter token burn on hour-bucket exhaustion (BUG-07)",
+      "description": "As a developer, I need the rate limiter to check the hour bucket before consuming the minute token so that exhausting the hour limit doesn't permanently burn a minute-bucket token.",
+      "acceptanceCriteria": [
+        "In api/middleware.py, reorder the bucket checks: check hour bucket first, then minute bucket \u2014 only consume tokens after both checks pass",
+        "A unit test verifies that when the hour bucket is exhausted, the minute bucket count is unchanged after the rejected request",
+        "A unit test verifies that when only the minute bucket is exhausted, the hour bucket count is unchanged",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": true,
+      "notes": "BUG-07 from audit."
+    },
+    {
+      "id": "US-025",
+      "title": "Restrict CORS to specific methods and headers (SEC-M1)",
+      "description": "As a security engineer, I need the FastAPI CORS middleware to use an explicit allow-list of methods and headers instead of wildcards so the API isn't overly permissive.",
+      "acceptanceCriteria": [
+        "In api/main.py CORSMiddleware config, replace allow_methods=['*'] with ['GET', 'POST', 'OPTIONS']",
+        "Replace allow_headers=['*'] with ['Content-Type', 'Authorization', 'X-Api-Key']",
+        "allow_credentials remains True (needed for BYOK flows)",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": true,
+      "notes": "SEC-M1 from audit."
+    },
+    {
+      "id": "US-026",
+      "title": "Surface audit log failures instead of silently swallowing them (SEC-M7)",
+      "description": "As a developer, I need audit log failures to emit a warning log instead of being silently swallowed so monitoring can detect blind spots in the audit trail.",
+      "acceptanceCriteria": [
+        "In api/middleware.py, replace the bare 'except Exception: pass' in the audit-log block with 'except Exception as e: logger.warning(\"audit log failed: %s\", e)'",
+        "A logger is imported (logging.getLogger(__name__)) at the top of the file if not already present",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": true,
+      "notes": "SEC-M7 from audit."
+    },
+    {
+      "id": "US-027",
+      "title": "Validate DAILY_SPEND_CAP env var at startup (SEC-M8)",
+      "description": "As a developer, I need DAILY_SPEND_CAP to be validated as a positive float at app startup so an invalid value fails fast with a clear message instead of crashing mid-request.",
+      "acceptanceCriteria": [
+        "In api/main.py, parse DAILY_SPEND_CAP inside a try/except ValueError at the top of the lifespan function or module level",
+        "If parsing fails, log a clear error and raise RuntimeError to abort startup",
+        "If the value parses but is <= 0, also raise RuntimeError",
+        "A unit test verifies that an invalid env var value causes startup to fail with a descriptive message",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": true,
+      "notes": "SEC-M8 from audit."
+    },
+    {
+      "id": "US-028",
+      "title": "Handle HTTP redirects explicitly in image loader (BUG-04 / SEC-M2)",
+      "description": "As a developer, I need the image loader to handle HTTP 3xx redirects gracefully \u2014 following safe redirects (https\u2192https) while raising a clear ValueError for others.",
+      "acceptanceCriteria": [
+        "In image/loader.py, when fetching remote images, allow follow_redirects=True but re-validate the final URL through check_url() after any redirect",
+        "If the redirect destination fails the SSRF check, raise ValueError('redirect to blocked address')",
+        "If the request fails with a non-2xx status code after following redirects, raise ValueError with the status code",
+        "A unit test verifies that an http\u2192https redirect is followed successfully",
+        "A unit test verifies that a redirect to a private IP is rejected",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 28,
+      "passes": true,
+      "notes": "BUG-04 and SEC-M2 from audit."
+    },
+    {
+      "id": "US-029",
+      "title": "Guard image extractor against non-RGB images (BUG-05)",
+      "description": "As a developer, I need the image extractor to convert any image to RGB before k-means clustering so RGBA, palette, or grayscale images don't crash with a reshape error.",
+      "acceptanceCriteria": [
+        "In image/extractor.py, add img = img.convert('RGB') before the np.array() call",
+        "A unit test passes an RGBA PNG and verifies extract_palette returns a valid list of hex colors",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 29,
+      "passes": true,
+      "notes": "BUG-05 from audit."
+    },
+    {
+      "id": "US-030",
+      "title": "Fix cost estimate using actual token count (BUG-11)",
+      "description": "As a developer, I need the cost estimate in prompt_mode to use the actual token count from the LLM response instead of a hardcoded 0.5 multiplier so spend-cap enforcement is accurate.",
+      "acceptanceCriteria": [
+        "OpenAICompatProvider.generate() returns (text, tokens_used) as a tuple where tokens_used comes from response JSON usage.total_tokens (default 0 if missing)",
+        "In modes/prompt_mode.py, unpack the tuple and use actual token count in cost_per_token calculation",
+        "In providers/registry.py generate_with_fallback(), propagate the token count through to the caller",
+        "The hardcoded '* 0.5' multiplier is removed",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 30,
+      "passes": true,
+      "notes": "BUG-11 from audit."
+    },
+    {
+      "id": "US-031",
+      "title": "Preserve provider error body on raise_for_status (BUG-12)",
+      "description": "As a developer, I need the OpenAI-compat provider to include the API error response body in the exception message so users and logs see 'model not found' instead of just an HTTP status code.",
+      "acceptanceCriteria": [
+        "In providers/openai_compat.py, replace resp.raise_for_status() with: if resp.status_code >= 400: raise httpx.HTTPStatusError(resp.text, request=resp.request, response=resp)",
+        "Or equivalently: catch HTTPStatusError and re-raise with resp.text included in the message",
+        "A unit test verifies that a 404 response with body 'model not found' raises an exception whose str() contains 'model not found'",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 31,
+      "passes": true,
+      "notes": "BUG-12 from audit."
+    },
+    {
+      "id": "US-032",
+      "title": "Declare required Firestore composite index (BUG-13)",
+      "description": "As a developer, I need the Firestore composite index on (query_hash, created_at DESC) declared in firestore.indexes.json so the get_by_hash query doesn't fail at runtime with FailedPrecondition.",
+      "acceptanceCriteria": [
+        "In firestore.indexes.json, add a composite index entry for collection 'themes' with fields: query_hash ASC, created_at DESCENDING",
+        "The JSON is valid and parseable",
+        "Tests pass"
+      ],
+      "priority": 32,
+      "passes": true,
+      "notes": "BUG-13 from audit."
+    },
+    {
+      "id": "US-033",
+      "title": "Fix list_themes called twice in config status (BUG-15)",
+      "description": "As a developer, I need config status to call list_themes only once and reuse the result for both display and count so we avoid a redundant DB query.",
+      "acceptanceCriteria": [
+        "In cli/main.py config_status(), call list_themes() once, store the result, then use len(result) for the count and iterate result for display",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 33,
+      "passes": true,
+      "notes": "BUG-15 from audit."
+    },
+    {
+      "id": "US-034",
+      "title": "Add UNIQUE(query_hash) constraint to themes table (BUG-19)",
+      "description": "As a developer, I need a UNIQUE constraint on the query_hash column of the themes table so concurrent requests cannot insert duplicate themes for the same query.",
+      "acceptanceCriteria": [
+        "In cache/db.py init_db(), add UNIQUE(query_hash) to the CREATE TABLE statement for themes",
+        "In cache/db.py save_theme(), use INSERT OR IGNORE (or ON CONFLICT DO NOTHING) so a duplicate hash is safely skipped",
+        "A unit test verifies that inserting two themes with the same query_hash results in exactly one row",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 34,
+      "passes": true,
+      "notes": "BUG-19 from audit."
+    },
+    {
+      "id": "US-035",
+      "title": "Reuse SQLite connection per repository instance (PERF-M1)",
+      "description": "As a developer, I need ThemeRepository to open one SQLite connection in __init__ and reuse it across calls so we avoid 5+ open/close cycles per request.",
+      "acceptanceCriteria": [
+        "In cache/db.py ThemeRepository.__init__(), open self._conn = sqlite3.connect(...) once with check_same_thread=False",
+        "All methods use self._conn instead of opening a new connection",
+        "Add a close() method and __del__ for cleanup",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 35,
+      "passes": false,
+      "notes": "PERF-M1 from audit."
+    },
+    {
+      "id": "US-036",
+      "title": "Fix EXIF strip memory spike by using img.copy() (PERF-M4)",
+      "description": "As a developer, I need the EXIF stripping in image/loader.py to use img.copy() instead of list(img.getdata()) + putdata() to avoid materializing millions of Python tuples for large images.",
+      "acceptanceCriteria": [
+        "In image/loader.py _strip_exif(), replace the list(img.getdata()) + new Image + putdata() pattern with: clean = Image.new(img.mode, img.size); clean.paste(img); return clean",
+        "Or simply: return img.copy() if img has no EXIF in its info dict, otherwise create a clean copy",
+        "A unit test verifies that EXIF data is stripped from the returned image",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 36,
+      "passes": true,
+      "notes": "PERF-M4 from audit."
+    },
+    {
+      "id": "US-037",
+      "title": "Vectorize cosine similarity with numpy matrix multiply (PERF-M6)",
+      "description": "As a developer, I need the cosine similarity search to use numpy matrix multiplication instead of a Python loop so it scales sub-linearly with cache size.",
+      "acceptanceCriteria": [
+        "In cache/embeddings.py find_similar(), replace the Python for-loop cosine similarity with: scores = (matrix @ query_vec) / (norms * query_norm) using numpy",
+        "matrix is shape (N, D), query_vec is shape (D,), result is shape (N,)",
+        "Return the (id, score) pair for the maximum score if it exceeds the threshold",
+        "A unit test verifies find_similar returns the correct closest match",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 37,
+      "passes": false,
+      "notes": "PERF-M6 from audit."
+    },
+    {
+      "id": "US-038",
+      "title": "Mention local providers in onboarding wizard (CLI-5)",
+      "description": "As a new user running the onboarding wizard, I need to be told about Ollama and other local providers so I understand I can use tty-theme for free without any API key.",
+      "acceptanceCriteria": [
+        "In cli/main.py config_setup() (or equivalent onboarding function), add a section that explains local provider options before prompting for API keys",
+        "The output mentions: 'No API key needed if you have Ollama, LM Studio, or llamafile running locally'",
+        "Includes the auto-detect note: 'tty-theme will auto-detect Ollama at localhost:11434'",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 38,
+      "passes": false,
+      "notes": "CLI-5 from audit. Contradicts local-first positioning."
+    },
+    {
+      "id": "US-039",
+      "title": "Add visual separators to config status output (CLI-6)",
+      "description": "As a user, I need config status output to have clear visual sections so I can quickly scan provider status, cache stats, and spend without the output blurring together.",
+      "acceptanceCriteria": [
+        "In cli/main.py config_status(), add section headers (e.g. '\u2500\u2500 Providers \u2500\u2500', '\u2500\u2500 Cache \u2500\u2500', '\u2500\u2500 Spend \u2500\u2500') between logical groups",
+        "Each section is separated by a blank line",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 39,
+      "passes": true,
+      "notes": "CLI-6 from audit."
+    },
+    {
+      "id": "US-040",
+      "title": "Auto-seed community themes on first run (CLI-9)",
+      "description": "As a new user, I need community themes to be seeded automatically on first use so I get tier-1 and tier-2 cache hits immediately without knowing about the seed command.",
+      "acceptanceCriteria": [
+        "In cli/main.py generate command, check if the theme cache is empty (list_themes(1) returns []) before running the pipeline",
+        "If empty, automatically call the seed logic (load themes/index.json and insert into cache) with a status message: 'Seeding community themes on first run...'",
+        "The auto-seed only runs once \u2014 subsequent calls skip it because the cache is non-empty",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 40,
+      "passes": false,
+      "notes": "CLI-9 from audit. Hidden prerequisite causing Tier 3 hits on first use."
+    },
+    {
+      "id": "US-041",
+      "title": "Simplify web provider UI to Free / BYOK two-choice model",
+      "description": "As a user, I want a simple two-option provider selector (Free tier vs BYOK) so I am not confused by 6 different provider rows. Web UI never exposes local model option.",
+      "acceptanceCriteria": [
+        "Update mockup.html provider selector to show exactly two radio options: Free (Gemini quota, no key needed) and BYOK (paste your own key + dropdown for Groq/Gemini/OpenAI/Claude/Mistral)",
+        "BYOK section only shows key input + provider dropdown when BYOK radio is selected",
+        "Generate button is disabled until: Free is selected (always enabled) OR BYOK is selected and key field is non-empty (fixes WEB-1)",
+        "Remove the Local LLM (BYOK-Local) option from the web UI provider selector entirely",
+        "Update PRD \u00a76.2 Web UI / Hosted Mode to document the simplified two-mode selector",
+        "Tests pass"
+      ],
+      "priority": 41,
+      "passes": false,
+      "notes": "Simplification per user decision. Local LLM stays CLI-only. Also fixes WEB-1 (generate button enabled before key entered)."
     }
   ]
 }
