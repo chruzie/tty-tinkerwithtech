@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -111,8 +110,8 @@ except ImportError:
 
 
 def _ip_hash(request: Request) -> str:
-    host = request.client.host if request.client else "unknown"
-    return hashlib.sha256(host.encode()).hexdigest()[:16]
+    from api.middleware import _ip_hash as _xff_ip_hash
+    return _xff_ip_hash(request)
 
 
 def _parse_theme_colors(theme_data: str) -> dict[str, str]:
