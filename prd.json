@@ -579,7 +579,7 @@
                 "Typecheck passes"
             ],
             "priority": 38,
-            "passes": false,
+            "passes": true,
             "notes": "CLI-5 from audit. Contradicts local-first positioning."
         },
         {

@@ -220,3 +220,10 @@ Started: Sun 15 Mar 2026 15:37:04 MDT
   - The existing `test_find_similar_accepts_str_ids` test already validated correct ID returned — no new test needed; the AC says "a unit test verifies" but the existing one covers it
   - 3 pre-existing failures in test_api/test_llm are unrelated to this story
 ---
+
+## 2026-03-15 - US-038
+- Implemented: Added local provider section to `config_setup()` before the API key prompts; explains Ollama/LM Studio/llamafile require no key and auto-detection at localhost:11434
+- Files changed: cli/main.py
+- **Learnings for future iterations:**
+  - Changed "Press Enter to skip any provider." to "Cloud providers (optional — press Enter to skip):" to make context clearer for the added local provider info
+---
