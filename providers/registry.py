@@ -11,18 +11,26 @@ All other errors propagate immediately.
 
 from __future__ import annotations
 
+import os
+
 import httpx
 
 from providers.openai_compat import CATALOGUE, OpenAICompatProvider
-from security.keystore import get_key
+
+_KEY_ENV: dict[str, str] = {
+    "gemini": "GEMINI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+}
 
 
 def _build_chain(preferred: str | None = None) -> list[OpenAICompatProvider]:
-    """Build the ordered provider list, injecting stored API keys."""
+    """Build the ordered provider list, injecting API keys from env vars."""
     providers: list[OpenAICompatProvider] = []
 
     for name, base_url, model, key_name, cost, is_local in CATALOGUE:
-        api_key = get_key(key_name) if key_name else None
+        api_key = os.environ.get(_KEY_ENV[key_name]) if key_name and key_name in _KEY_ENV else None
         p = OpenAICompatProvider(
             name=name,
             base_url=base_url,

@@ -113,8 +113,12 @@ class TestRegistry:
         mock_client = self._mock_client(get_status=200)
         with (
             patch("providers.openai_compat.httpx.Client", return_value=mock_client),
-            patch("security.keystore.get_key", return_value=None),
+            patch.dict("os.environ", {}, clear=False),
         ):
+            # Ensure cloud provider env vars are absent so only local is healthy
+            import os
+            os.environ.pop("GEMINI_API_KEY", None)
+            os.environ.pop("GROQ_API_KEY", None)
             p = resolve_provider()
             assert p.name == "ollama"
 
@@ -124,8 +128,11 @@ class TestRegistry:
         mock_client = self._mock_client(get_raises=Exception("refused"))
         with (
             patch("providers.openai_compat.httpx.Client", return_value=mock_client),
-            patch("security.keystore.get_key", return_value=None),
+            patch.dict("os.environ", {}, clear=False),
         ):
+            import os
+            os.environ.pop("GEMINI_API_KEY", None)
+            os.environ.pop("GROQ_API_KEY", None)
             with pytest.raises(RuntimeError, match="No LLM provider"):
                 resolve_provider()
 
@@ -154,7 +161,7 @@ class TestRegistry:
 
         with (
             patch("providers.openai_compat.httpx.Client", return_value=mock_client),
-            patch("security.keystore.get_key", return_value="fake-key"),
+            patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key", "GROQ_API_KEY": "fake-key"}),
         ):
             result = generate_with_fallback("user prompt", "system prompt")
             assert result == "theme output"
@@ -181,7 +188,7 @@ class TestRegistry:
 
         with (
             patch("providers.openai_compat.httpx.Client", return_value=mock_client),
-            patch("security.keystore.get_key", return_value="fake-key"),
+            patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key", "GROQ_API_KEY": "fake-key"}),
         ):
             with pytest.raises(httpx.HTTPStatusError):
                 generate_with_fallback("user prompt", "system prompt")
