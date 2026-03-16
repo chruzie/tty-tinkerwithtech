@@ -55,6 +55,32 @@ def _install_theme(name: str, content: str, target: str, force: bool = False) ->
     return dest
 
 
+def _auto_seed(repo: object) -> None:
+    """Seed community themes on first run if the cache is empty."""
+    import hashlib
+
+    if repo.list_themes(1):
+        return  # cache already has entries
+
+    index_path = Path(__file__).parent.parent / "themes" / "index.json"
+    if not index_path.exists():
+        return
+
+    typer.echo("Seeding community themes on first run...", err=True)
+    themes = json.loads(index_path.read_text())
+    for theme in themes:
+        q_hash = hashlib.sha256(theme["name"].encode()).hexdigest()
+        if not repo.get_by_hash(q_hash):
+            repo.save_theme(
+                query_hash=q_hash,
+                theme_data=theme["ghostty_data"],
+                input_type="prompt",
+                query_raw=theme["name"],
+                name=theme["name"],
+                source="community",
+            )
+
+
 # ── generate command ──────────────────────────────────────────────────────────
 
 @app.command()
@@ -82,6 +108,12 @@ def generate(
         raise typer.Exit(1)
 
     try:
+        from cache.db import ThemeRepository
+
+        _repo = ThemeRepository()
+        _repo.init_db()
+        _auto_seed(_repo)
+
         typer.echo("searching cache...", err=True)
 
         from providers.registry import resolve_provider
