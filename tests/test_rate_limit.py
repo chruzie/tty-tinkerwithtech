@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from cache.db import ThemeRepository
 from api.rate_limit import (
     BurstCooldown,
     RateLimitExceeded,
     check_rate_limit,
     increment_rate_limit,
 )
+from cache.db import ThemeRepository
 
 
 @pytest.fixture
@@ -76,7 +75,7 @@ def test_sixth_call_raises_rate_limit_exceeded(repo: ThemeRepository) -> None:
 def test_burst_triggers_cooldown(repo: ThemeRepository) -> None:
     """4 requests within burst window should trigger BurstCooldown on 4th."""
     ip = "testip0003"
-    now_iso = datetime.now(tz=timezone.utc).isoformat()
+    now_iso = datetime.now(tz=UTC).isoformat()
 
     # Seed 3 recent timestamps directly
     repo.upsert_rate_limit(ip, 3, "2026-03-15", [now_iso, now_iso, now_iso], 0)
