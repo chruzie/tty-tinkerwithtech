@@ -76,7 +76,7 @@ def generate_from_image(
         prompt = build_refine_prompt(colors, user_description="")
         client = LLMClient()
         try:
-            raw = client.generate(prompt, provider)
+            raw, _tokens = client.generate(prompt, provider)
             palette_dict = validate_theme(raw)
         except (LLMError, ValueError):
             pass  # Fall back to the extracted palette on failure

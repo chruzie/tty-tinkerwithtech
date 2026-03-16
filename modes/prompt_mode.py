@@ -97,9 +97,10 @@ def generate_from_prompt(
     palette: dict[str, str] = {}
     last_error: Exception | None = None
 
+    tokens_used = 0
     for attempt in range(_MAX_RETRIES):
         try:
-            raw = client.generate(prompt, provider)
+            raw, tokens_used = client.generate(prompt, provider)
             palette = validate_theme(raw)
             theme_str = serializer.serialize(palette)
             break
@@ -125,7 +126,7 @@ def generate_from_prompt(
     # Cache always stores Ghostty format (canonical) so validate_theme can re-parse
     # on future cache hits regardless of what target was requested.
     cached_data = _CACHE_SERIALIZER.serialize(palette)
-    cost = getattr(provider, "cost_per_1k_tokens", 0.0) * 0.5  # rough estimate
+    cost = getattr(provider, "cost_per_1k_tokens", 0.0) * (tokens_used / 1000)
     repo.save_theme(
         query_hash=query_hash,
         theme_data=cached_data,

@@ -48,11 +48,14 @@ class TestOpenAICompatProvider:
         from providers.openai_compat import OpenAICompatProvider
 
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": "palette = 0 = #000000"}}]}
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"choices": [{"message": {"content": "palette = 0 = #000000"}}], "usage": {"total_tokens": 10}}
         mock_resp.raise_for_status = MagicMock()
         p = OpenAICompatProvider("groq", "https://api.groq.com/openai/v1", "llama3", api_key="k")
         with patch.object(p._client, "post", return_value=mock_resp):
-            assert p.generate({"system": "s", "user": "u"}) == "palette = 0 = #000000"
+            content, tokens = p.generate({"system": "s", "user": "u"})
+            assert content == "palette = 0 = #000000"
+            assert tokens == 10
 
     def test_health_check_cached_within_ttl(self):
         from providers.openai_compat import OpenAICompatProvider
@@ -80,7 +83,8 @@ class TestOpenAICompatProvider:
         from providers.openai_compat import OpenAICompatProvider
 
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": "out"}}]}
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"choices": [{"message": {"content": "out"}}], "usage": {"total_tokens": 5}}
         mock_resp.raise_for_status = MagicMock()
         p = OpenAICompatProvider("groq", "https://api.groq.com/openai/v1", "llama3", api_key="k")
         with patch.object(p._client, "post", return_value=mock_resp) as mock_post:
@@ -140,8 +144,8 @@ class TestRegistry:
                 r.status_code = 429
                 raise httpx.HTTPStatusError("429", request=MagicMock(), response=r)
             m = MagicMock()
-            m.raise_for_status = MagicMock()
-            m.json.return_value = {"choices": [{"message": {"content": "theme output"}}]}
+            m.status_code = 200
+            m.json.return_value = {"choices": [{"message": {"content": "theme output"}}], "usage": {"total_tokens": 8}}
             return m
 
         mock_client = MagicMock()
@@ -152,6 +156,7 @@ class TestRegistry:
             patch("providers.openai_compat.httpx.Client", return_value=mock_client),
             patch("security.keystore.get_key", return_value="fake-key"),
         ):
-            result, provider_name = generate_with_fallback({"system": "s", "user": "u"})
+            result, provider_name, tokens = generate_with_fallback({"system": "s", "user": "u"})
             assert result == "theme output"
+            assert tokens == 8
             assert call_count == 2

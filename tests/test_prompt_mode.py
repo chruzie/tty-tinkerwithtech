@@ -61,7 +61,7 @@ class TestPromptMode:
         mock_provider = MagicMock()
         mock_provider.name = "mock"
         mock_provider.cost_per_1k_tokens = 0.0
-        mock_provider.generate.return_value = _VALID_THEME
+        mock_provider.generate.return_value = (_VALID_THEME, 42)
 
         with patch("cache.embeddings.embed", side_effect=ImportError):
             result, tier = generate_from_prompt(
@@ -80,9 +80,9 @@ class TestPromptMode:
         mock_provider.cost_per_1k_tokens = 0.0
         # First two calls return invalid, third is valid
         mock_provider.generate.side_effect = [
-            "not valid",
-            "also not valid",
-            _VALID_THEME,
+            ("not valid", 0),
+            ("also not valid", 0),
+            (_VALID_THEME, 10),
         ]
 
         with patch("cache.embeddings.embed", side_effect=ImportError):
@@ -100,7 +100,7 @@ class TestPromptMode:
         mock_provider = MagicMock()
         mock_provider.name = "mock"
         mock_provider.cost_per_1k_tokens = 0.0
-        mock_provider.generate.return_value = "always invalid"
+        mock_provider.generate.return_value = ("always invalid", 0)
 
         with pytest.raises(RuntimeError, match="failed after"):
             generate_from_prompt(

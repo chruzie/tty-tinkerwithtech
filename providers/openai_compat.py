@@ -89,7 +89,11 @@ class OpenAICompatProvider(BaseProvider):
         _health_cache[cache_key] = (result, now)
         return result
 
-    def generate(self, prompt: dict[str, str]) -> str:
+    def generate(self, prompt: dict[str, str]) -> tuple[str, int]:
+        """Call the LLM and return (content, tokens_used).
+
+        tokens_used comes from response.usage.total_tokens (0 if not present).
+        """
         resp = self._client.post(
             f"{self._base_url}/chat/completions",
             headers=self._headers(),
@@ -103,5 +107,13 @@ class OpenAICompatProvider(BaseProvider):
                 "max_tokens": 1024,
             },
         )
-        resp.raise_for_status()  # raises HTTPStatusError (incl. 429) — caught by registry
-        return resp.json()["choices"][0]["message"]["content"]
+        if resp.status_code >= 400:  # noqa: PLR2004
+            raise httpx.HTTPStatusError(
+                f"HTTP {resp.status_code}: {resp.text}",
+                request=resp.request,
+                response=resp,
+            )
+        body = resp.json()
+        content: str = body["choices"][0]["message"]["content"]
+        tokens_used: int = body.get("usage", {}).get("total_tokens", 0)
+        return content, tokens_used

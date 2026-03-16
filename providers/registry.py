@@ -62,11 +62,11 @@ def resolve_provider(preferred: str | None = None) -> OpenAICompatProvider:
 def generate_with_fallback(
     prompt: dict[str, str],
     preferred: str | None = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, int]:
     """Generate a theme string with automatic 429 fallback across providers.
 
     Returns:
-        (theme_str, provider_name) — the raw LLM output and which provider was used.
+        (theme_str, provider_name, tokens_used) — raw LLM output, provider, and token count.
 
     Raises:
         RuntimeError: if all available providers are exhausted (throttled or failed).
@@ -82,8 +82,8 @@ def generate_with_fallback(
     errors: list[str] = []
     for provider in available:
         try:
-            result = provider.generate(prompt)
-            return result, provider.name
+            content, tokens = provider.generate(prompt)
+            return content, provider.name, tokens
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 429:  # noqa: PLR2004
                 errors.append(f"{provider.name}: throttled (429)")
