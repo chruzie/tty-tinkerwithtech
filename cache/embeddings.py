@@ -45,21 +45,22 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 
 def find_similar(
     query: str,
-    candidates: list[tuple[int, list[float]]],
+    candidates: list[tuple[int | str, list[float]]],
     threshold: float = 0.85,
-) -> int | None:
+) -> int | str | None:
     """Return the theme id of the most similar cached embedding, or None.
 
     Args:
         query: the raw query string to embed and compare.
         candidates: list of (theme_id, embedding_vector) from the cache.
+            theme_id is int for SQLite repos and str for Firestore repos.
         threshold: minimum cosine similarity to count as a match.
     """
     if not candidates:
         return None
 
     query_vec = embed(query)
-    best_id = None
+    best_id: int | str | None = None
     best_score = -1.0
 
     for theme_id, vec in candidates:

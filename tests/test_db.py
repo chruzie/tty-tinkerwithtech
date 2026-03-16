@@ -107,3 +107,27 @@ def test_list_themes(repo: ThemeRepository) -> None:
         )
     themes = repo.list_themes()
     assert len(themes) == 3
+
+
+def test_find_similar_accepts_str_ids() -> None:
+    """find_similar must return the str ID unchanged (Firestore compat).
+
+    Firestore uses str document IDs; find_similar must propagate the ID type
+    through to the caller so get_by_id(str_id) can be called without int().
+    """
+    from unittest.mock import patch
+
+    from cache.embeddings import find_similar
+
+    # Simulate Firestore-style str IDs in the candidates list
+    candidates: list[tuple[int | str, list[float]]] = [
+        ("doc-abc", [1.0, 0.0]),
+        ("doc-xyz", [0.0, 1.0]),
+    ]
+    query_vec = [1.0, 0.0]  # cosine sim = 1.0 with doc-abc
+
+    with patch("cache.embeddings.embed", return_value=query_vec):
+        result = find_similar("test query", candidates, threshold=0.85)
+
+    assert result == "doc-abc"
+    assert isinstance(result, str)
