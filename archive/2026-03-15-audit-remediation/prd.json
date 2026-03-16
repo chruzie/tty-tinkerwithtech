@@ -1,0 +1,631 @@
+{
+    "project": "tty-theme",
+    "branchName": "ralph/audit-remediation",
+    "description": "tty-theme \u2014 Audit remediation. Fixes for P0/P1 findings from the 2026-03-15 multi-agent security, performance, bug, and UX review. Stories ordered by dependency: security foundations first, then performance, then bugs, then UX.",
+    "userStories": [
+        {
+            "id": "US-001",
+            "title": "Fix SSRF guard: add missing blocklist ranges and IPv6 mapped addresses",
+            "description": "As a security engineer, I need the SSRF guard to block 0.0.0.0/8, 100.64.0.0/10, and IPv4-mapped IPv6 addresses so attackers cannot bypass it with edge-case addresses.",
+            "acceptanceCriteria": [
+                "Add 0.0.0.0/8 and 100.64.0.0/10 to _BLOCKED_NETWORKS in security/ssrf_guard.py",
+                "For each resolved IP, check ipaddress.ip_address(ip).ipv4_mapped and re-validate the embedded IPv4 address if present",
+                "check_url('https://0.0.0.0/') raises ValueError",
+                "check_url('https://[::ffff:127.0.0.1]/') raises ValueError",
+                "check_url('https://100.64.1.1/') raises ValueError",
+                "Existing tests still pass",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 1,
+            "passes": true,
+            "notes": "SEC-C2 from audit. See security/ssrf_guard.py lines 9-18."
+        },
+        {
+            "id": "US-002",
+            "title": "Fix SSRF guard: resolve DNS once and pass resolved IP to httpx (DNS rebinding fix)",
+            "description": "As a security engineer, I need DNS resolution to happen once and the resolved IP to be reused for the HTTP fetch so a DNS rebinding attack cannot bypass the SSRF guard between the check and the request.",
+            "acceptanceCriteria": [
+                "Add a function safe_fetch(url, **kwargs) in security/ssrf_guard.py that: (1) calls check_url(url), (2) resolves the hostname via socket.getaddrinfo, (3) validates the resolved IP, (4) performs the httpx.get with the resolved IP via a custom transport or by substituting the IP in the URL and passing the original host as the Host header",
+                "image/loader.py imports and uses safe_fetch instead of httpx.get for remote image URLs",
+                "A mock test verifies safe_fetch rejects a URL whose DNS resolves to 127.0.0.1",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 2,
+            "passes": true,
+            "notes": "SEC-C1 from audit. DNS TOCTOU between ssrf_guard.py check and loader.py httpx.get."
+        },
+        {
+            "id": "US-003",
+            "title": "Fix path traversal in --install theme name sanitization",
+            "description": "As a user, I need the --install flag to safely handle any theme name so that a malicious name like ../../.bashrc cannot write outside the themes directory.",
+            "acceptanceCriteria": [
+                "In cli/main.py _install_theme(), after building safe_name, validate it with re.match(r'^[a-z0-9][a-z0-9_-]*$', safe_name) and raise ValueError if it does not match",
+                "Names containing '/' or '..' or starting with '-' are rejected with a clear error message",
+                "tty-theme generate --prompt x --install --name '../../evil' prints an error and exits non-zero",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 3,
+            "passes": true,
+            "notes": "SEC-H6 from audit. cli/main.py lines 36-38."
+        },
+        {
+            "id": "US-004",
+            "title": "Restrict /metrics endpoint to internal access only",
+            "description": "As a platform engineer, I need the /metrics endpoint to be inaccessible to public internet clients so that internal observability data is not exposed.",
+            "acceptanceCriteria": [
+                "Add a MetricsAuthMiddleware or a dependency in api/main.py that checks for a METRICS_TOKEN env var",
+                "If METRICS_TOKEN is set, /metrics requires Authorization: Bearer <token> header and returns 403 if missing or wrong",
+                "If METRICS_TOKEN is not set (local dev), /metrics is accessible without auth",
+                ".env.example documents METRICS_TOKEN= as an optional field",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 4,
+            "passes": true,
+            "notes": "SEC-H4 from audit. api/main.py lines 74-77."
+        },
+        {
+            "id": "US-005",
+            "title": "Fix X-Forwarded-For spoofing in rate limiter",
+            "description": "As a platform engineer, I need the rate limiter to only trust X-Forwarded-For when behind a known proxy so that clients cannot bypass rate limits by spoofing the header.",
+            "acceptanceCriteria": [
+                "In api/middleware.py _ip_hash(), add a TRUSTED_PROXY_COUNT env var (default 0, integer)",
+                "If TRUSTED_PROXY_COUNT == 0, use request.client.host directly, ignoring X-Forwarded-For",
+                "If TRUSTED_PROXY_COUNT > 0, parse the Nth-from-right value from X-Forwarded-For (the trusted hop)",
+                ".env.example documents TRUSTED_PROXY_COUNT=1 for Cloud Run behind Google Front End",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 5,
+            "passes": true,
+            "notes": "SEC-H1 from audit. api/middleware.py lines 39-43."
+        },
+        {
+            "id": "US-006",
+            "title": "Bound rate limiter memory with TTL-based eviction",
+            "description": "As a platform engineer, I need the in-process rate limit dictionaries to evict stale entries so that an attacker cannot cause OOM by rotating spoofed IPs.",
+            "acceptanceCriteria": [
+                "Replace _minute_buckets and _hour_buckets defaultdicts in api/middleware.py with cachetools.TTLCache(maxsize=10000, ttl=3600)",
+                "Add cachetools to pyproject.toml dependencies",
+                "After eviction, a previously seen IP gets a fresh bucket (correct behavior)",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 6,
+            "passes": true,
+            "notes": "SEC-H3 and PERF-M7 from audit. api/middleware.py lines 34-35."
+        },
+        {
+            "id": "US-007",
+            "title": "Fix sanitize_prompt to raise ValueError on empty result and strip control characters",
+            "description": "As a developer, I need sanitize_prompt to fulfil its documented contract (raise ValueError on empty) and strip ASCII control characters to prevent log injection.",
+            "acceptanceCriteria": [
+                "At the end of sanitize_prompt() in security/input_sanitizer.py, add: if not normalized: raise ValueError('Prompt is empty after sanitization')",
+                "Strip all characters with Unicode category Cc and Cf (except space/tab/newline) using unicodedata.category",
+                "sanitize_prompt('') raises ValueError",
+                "sanitize_prompt('\\x00\\x01hello') returns 'hello'",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 7,
+            "passes": true,
+            "notes": "SEC-M4 and SEC-M5 from audit."
+        },
+        {
+            "id": "US-008",
+            "title": "Validate secret name before Secret Manager path construction",
+            "description": "As a security engineer, I need get_secret() to validate the secret name against an allowlist so that path injection into the Secret Manager resource path is impossible.",
+            "acceptanceCriteria": [
+                "In security/secrets.py get_secret(), before constructing the resource path, validate name matches r'^[A-Z_][A-Z0-9_]*$'",
+                "Raise ValueError('Invalid secret name: {name}') if it does not match",
+                "get_secret('../../bad') raises ValueError",
+                "get_secret('GEMINI_API_KEY') works normally",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 8,
+            "passes": true,
+            "notes": "SEC-M6 from audit. security/secrets.py line 47."
+        },
+        {
+            "id": "US-009",
+            "title": "Fix sync blocking in async FastAPI generate endpoint",
+            "description": "As a platform engineer, I need the /v1/generate endpoint to not block the asyncio event loop so that the API can handle multiple concurrent requests.",
+            "acceptanceCriteria": [
+                "Change async def generate(...) to def generate(...) in api/main.py so FastAPI delegates it to a thread pool",
+                "Remove any await calls that are no longer needed after this change",
+                "The endpoint still returns the correct GenerateResponse",
+                "Typecheck passes"
+            ],
+            "priority": 9,
+            "passes": true,
+            "notes": "PERF-H1 from audit. api/main.py lines 114-158. Simplest fix: sync def, FastAPI auto-threads."
+        },
+        {
+            "id": "US-010",
+            "title": "Add HTTP connection reuse to OpenAICompatProvider",
+            "description": "As a developer, I need each OpenAICompatProvider instance to reuse an httpx.Client so that TCP+TLS connection overhead is not paid on every LLM call.",
+            "acceptanceCriteria": [
+                "In providers/openai_compat.py OpenAICompatProvider.__init__(), create self._client = httpx.Client(timeout=60.0) and store it",
+                "Replace the standalone httpx.post() call in generate() with self._client.post()",
+                "Replace the standalone httpx.get() call in health_check() with self._client.get() with timeout=2.0",
+                "Add __del__ or a close() method that calls self._client.close()",
+                "Existing provider tests still pass",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 10,
+            "passes": true,
+            "notes": "PERF-H4 from audit. providers/openai_compat.py lines 57, 65-80."
+        },
+        {
+            "id": "US-011",
+            "title": "Pre-load MiniLM embedding model at FastAPI startup",
+            "description": "As a platform engineer, I need the sentence-transformers model to be loaded during app startup rather than on the first request so that cold start latency does not affect real users.",
+            "acceptanceCriteria": [
+                "In api/main.py lifespan startup block, call cache.embeddings._get_model() (or equivalent) to force model load",
+                "The model is stored on app.state so it is reused across requests",
+                "If sentence-transformers is not installed, startup logs a warning but does not fail",
+                "Typecheck passes"
+            ],
+            "priority": 11,
+            "passes": true,
+            "notes": "PERF-H3 from audit. cache/embeddings.py lines 11-17."
+        },
+        {
+            "id": "US-012",
+            "title": "Cache provider health check results with 30-second TTL",
+            "description": "As a developer, I need provider health checks to be cached for 30 seconds so that repeated calls do not add 6 seconds of serial blocking when local providers are offline.",
+            "acceptanceCriteria": [
+                "In providers/openai_compat.py, add a _health_cache: dict[str, tuple[bool, float]] at module level",
+                "health_check() returns cached result if last check was within 30 seconds (use time.monotonic())",
+                "Otherwise performs the actual check and caches the result",
+                "A test verifies the second health_check() call within 30s does not call httpx.get again",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 12,
+            "passes": true,
+            "notes": "PERF-M2 from audit. providers/registry.py lines 49-50, openai_compat.py line 57."
+        },
+        {
+            "id": "US-013",
+            "title": "Fix cache hits returning wrong serialization format (BUG-01)",
+            "description": "As a user, I need --target iterm2 to always return iTerm2 format even when served from cache so that I get the format I asked for regardless of cache tier.",
+            "acceptanceCriteria": [
+                "In modes/prompt_mode.py, on the tier-1 cache hit path (line ~61), re-serialize cached['theme_data'] through the serializer: parse with validator, serialize with serializer.serialize()",
+                "On the tier-2 similarity hit path (line ~73), apply the same re-serialization",
+                "A test verifies: seed cache with Ghostty format, call generate_from_prompt with target='iterm2', assert output contains XML plist markers",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 13,
+            "passes": true,
+            "notes": "BUG-01 from audit. Critical. modes/prompt_mode.py lines 61 and 73."
+        },
+        {
+            "id": "US-014",
+            "title": "Fix wrong prompt builder used for image refinement (BUG-06)",
+            "description": "As a user, I need image refinement to use the correct LLM system prompt so that the palette-specific refine prompt is used instead of the text-inspiration prompt.",
+            "acceptanceCriteria": [
+                "In modes/image_mode.py line ~73, replace build_prompt(f'Refine this extracted palette:\\n{palette_str}') with build_refine_prompt(colors, user_description='') where colors is the extracted palette list",
+                "Import build_refine_prompt from generator.prompt",
+                "A test verifies the refine path calls generate with a prompt dict whose system key contains the refine system prompt text",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 14,
+            "passes": true,
+            "notes": "BUG-06 from audit. modes/image_mode.py line 73."
+        },
+        {
+            "id": "US-015",
+            "title": "Fix image loader: tighten magic bytes and handle UnidentifiedImageError (BUG-03, BUG-14)",
+            "description": "As a developer, I need the image loader to correctly validate WebP magic bytes and catch PIL's UnidentifiedImageError as ValueError so the API never leaks unhandled exceptions.",
+            "acceptanceCriteria": [
+                "In image/loader.py, change the RIFF entry to validate bytes 8-11 == b'WEBP': check first 12 bytes, require [0:4] == b'RIFF' and [8:12] == b'WEBP'",
+                "Remove the b'\\x00\\x00\\x00' catch-all entry from _ALLOWED_MAGIC",
+                "Wrap the PIL Image.open() call in a try/except that catches PIL.UnidentifiedImageError and re-raises as ValueError('Unsupported or corrupt image format')",
+                "A test verifies a WAV file (RIFF container) is rejected",
+                "A test verifies an unknown binary file starting with null bytes is rejected",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 15,
+            "passes": true,
+            "notes": "BUG-03 and BUG-14 from audit."
+        },
+        {
+            "id": "US-016",
+            "title": "Fix log_cost TOCTOU race with SQLite UPSERT (BUG-09)",
+            "description": "As a developer, I need log_cost to use an atomic UPSERT so concurrent requests cannot double-count costs.",
+            "acceptanceCriteria": [
+                "Add a UNIQUE(date, provider) constraint to the cost_log table in cache/db.py init_db()",
+                "Replace the SELECT + conditional INSERT/UPDATE in log_cost() with a single INSERT INTO cost_log(date, provider, calls, cost_usd) VALUES(?,?,1,?) ON CONFLICT(date, provider) DO UPDATE SET calls = calls + 1, cost_usd = cost_usd + excluded.cost_usd",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 16,
+            "passes": true,
+            "notes": "BUG-09 from audit. cache/db.py lines 141-156."
+        },
+        {
+            "id": "US-017",
+            "title": "Fix tier_used always hardcoded in API response (BUG-08)",
+            "description": "As an API consumer, I need the tier_used field in GenerateResponse to reflect the actual cache tier used so I can understand whether a result was cached or generated.",
+            "acceptanceCriteria": [
+                "Modify generate_from_prompt() in modes/prompt_mode.py to return a tuple (theme_str, tier: int) where tier=1 for hash hit, tier=2 for similarity hit, tier=3 for LLM generation",
+                "Modify generate_from_image() in modes/image_mode.py to return (theme_str, tier: int) where tier=1 for pHash cache hit, tier=3 for fresh extraction",
+                "Update api/main.py /v1/generate to unpack the tuple and set tier_used correctly",
+                "Update cli/main.py to handle the new return value (unpack tuple, use theme_str only)",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 17,
+            "passes": true,
+            "notes": "BUG-08 from audit. api/main.py lines 135 and 145."
+        },
+        {
+            "id": "US-018",
+            "title": "Add progress feedback to CLI generate command (CLI-3)",
+            "description": "As a user, I want to see progress messages during theme generation so I know the tool is working and not hung during LLM calls.",
+            "acceptanceCriteria": [
+                "In cli/main.py generate(), before calling generate_from_prompt or generate_from_image, print 'searching cache...' to stderr",
+                "After provider resolution, print '  generating via <provider.name>...' to stderr (requires provider name to be accessible at that level, or print it from inside the mode functions using a callback/echo param)",
+                "All status messages go to stderr (typer.echo(..., err=True)) so they do not contaminate piped output",
+                "Typecheck passes"
+            ],
+            "priority": 18,
+            "passes": true,
+            "notes": "CLI-3 from UX audit. cli/main.py lines 63-69."
+        },
+        {
+            "id": "US-019",
+            "title": "Improve CLI error messages with actionable guidance (CLI-1, CLI-2)",
+            "description": "As a user, I want error messages to tell me what went wrong and what to do next so I am not left with a cryptic Python exception string.",
+            "acceptanceCriteria": [
+                "In cli/main.py generate(), when neither --prompt nor --image is provided, print a multi-line help message: 'Error: at least one input is required.' followed by two usage examples and 'Run tty-theme generate --help for all options.'",
+                "Catch RuntimeError from resolve_provider separately and print: 'No LLM provider available. Run tty-theme config setup to add an API key, or start Ollama with: ollama serve'",
+                "Typecheck passes"
+            ],
+            "priority": 19,
+            "passes": true,
+            "notes": "CLI-1 and CLI-2 from UX audit."
+        },
+        {
+            "id": "US-020",
+            "title": "Add --install overwrite guard and post-install activation hint (CLI-4)",
+            "description": "As a user, I want to be warned before overwriting an existing theme and told how to activate it in my terminal config after installing.",
+            "acceptanceCriteria": [
+                "In cli/main.py _install_theme(), check if dest already exists before writing",
+                "If it exists, print a warning 'Theme <name> already exists at <path>. Use --force to overwrite.' and return None without writing",
+                "Add --force / -f bool flag to the generate command; if --force is passed, write without checking",
+                "After a successful Ghostty install, print to stderr: 'To activate: add `theme = <name>` to ~/.config/ghostty/config'",
+                "After a successful iTerm2 install, print to stderr: 'To activate: open iTerm2 \u2192 Preferences \u2192 Profiles \u2192 Colors \u2192 Color Presets \u2192 <name>'",
+                "Typecheck passes"
+            ],
+            "priority": 20,
+            "passes": true,
+            "notes": "CLI-4 from UX audit. cli/main.py lines 77-82."
+        },
+        {
+            "id": "US-021",
+            "title": "Move sentence-transformers to optional dependency group",
+            "description": "As a developer, I need sentence-transformers (and its 2GB PyTorch dep) to be optional so users who don't need tier-2 similarity caching don't pay the install cost.",
+            "acceptanceCriteria": [
+                "Move sentence-transformers from [project.dependencies] to [project.optional-dependencies] under key 'embeddings' in pyproject.toml",
+                "In cache/embeddings.py, wrap the import in try/except ImportError and raise a clear RuntimeError('Install tty-theme[embeddings] to enable similarity search') if not available",
+                "In modes/prompt_mode.py, the ImportError guard for sentence-transformers already exists \u2014 verify it correctly skips tier-2 and falls through to tier-3",
+                "uv sync installs without sentence-transformers by default",
+                "uv sync --extra embeddings installs it",
+                "Typecheck passes"
+            ],
+            "priority": 21,
+            "passes": true,
+            "notes": "PERF-L2 from audit. pyproject.toml line 25."
+        },
+        {
+            "id": "US-022",
+            "title": "Remove dead tomli dependency and fix GhosttySerializer file_extension",
+            "description": "As a developer, I need dead code removed and the Ghostty serializer's file_extension to match the actual install path so future use of the method doesn't introduce a regression.",
+            "acceptanceCriteria": [
+                "Remove the tomli conditional dependency from pyproject.toml (unreachable since requires-python>=3.11)",
+                "Change GhosttySerializer.file_extension() in generator/serializers/ghostty.py to return '' (empty string, matching the install logic in cli/main.py)",
+                "uv sync completes without error",
+                "Typecheck passes"
+            ],
+            "priority": 22,
+            "passes": true,
+            "notes": "BUG-17 and BUG-16 from audit."
+        },
+        {
+            "id": "US-023",
+            "title": "Fix Firestore ID type mismatch in tier-2 cache (BUG-02)",
+            "description": "As a developer, I need Firestore theme IDs to be handled consistently as strings throughout the cache layer so tier-2 similarity cache hits work correctly in API mode.",
+            "acceptanceCriteria": [
+                "In cache/firestore_db.py get_all_embeddings(), return list[tuple[str, list[float]]] (IDs already strings \u2014 confirm no cast to int)",
+                "In cache/firestore_db.py find_similar(), return type is str | None (not int | None)",
+                "In cache/firestore_db.py get_by_id(), accept str id parameter (not int)",
+                "Update modes/prompt_mode.py tier-2 cache branch: pass the str ID from find_similar() directly to get_by_id() without int() conversion",
+                "Add a unit test verifying that a Firestore str-keyed embedding round-trips through find_similar \u2192 get_by_id and returns the correct theme_data",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 23,
+            "passes": true,
+            "notes": "BUG-02 from audit. P0 \u2014 silent tier-2 cache miss on every Firestore API request."
+        },
+        {
+            "id": "US-024",
+            "title": "Fix rate limiter token burn on hour-bucket exhaustion (BUG-07)",
+            "description": "As a developer, I need the rate limiter to check the hour bucket before consuming the minute token so that exhausting the hour limit doesn't permanently burn a minute-bucket token.",
+            "acceptanceCriteria": [
+                "In api/middleware.py, reorder the bucket checks: check hour bucket first, then minute bucket \u2014 only consume tokens after both checks pass",
+                "A unit test verifies that when the hour bucket is exhausted, the minute bucket count is unchanged after the rejected request",
+                "A unit test verifies that when only the minute bucket is exhausted, the hour bucket count is unchanged",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 24,
+            "passes": true,
+            "notes": "BUG-07 from audit."
+        },
+        {
+            "id": "US-025",
+            "title": "Restrict CORS to specific methods and headers (SEC-M1)",
+            "description": "As a security engineer, I need the FastAPI CORS middleware to use an explicit allow-list of methods and headers instead of wildcards so the API isn't overly permissive.",
+            "acceptanceCriteria": [
+                "In api/main.py CORSMiddleware config, replace allow_methods=['*'] with ['GET', 'POST', 'OPTIONS']",
+                "Replace allow_headers=['*'] with ['Content-Type', 'Authorization', 'X-Api-Key']",
+                "allow_credentials remains True (needed for BYOK flows)",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 25,
+            "passes": true,
+            "notes": "SEC-M1 from audit."
+        },
+        {
+            "id": "US-026",
+            "title": "Surface audit log failures instead of silently swallowing them (SEC-M7)",
+            "description": "As a developer, I need audit log failures to emit a warning log instead of being silently swallowed so monitoring can detect blind spots in the audit trail.",
+            "acceptanceCriteria": [
+                "In api/middleware.py, replace the bare 'except Exception: pass' in the audit-log block with 'except Exception as e: logger.warning(\"audit log failed: %s\", e)'",
+                "A logger is imported (logging.getLogger(__name__)) at the top of the file if not already present",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 26,
+            "passes": true,
+            "notes": "SEC-M7 from audit."
+        },
+        {
+            "id": "US-027",
+            "title": "Validate DAILY_SPEND_CAP env var at startup (SEC-M8)",
+            "description": "As a developer, I need DAILY_SPEND_CAP to be validated as a positive float at app startup so an invalid value fails fast with a clear message instead of crashing mid-request.",
+            "acceptanceCriteria": [
+                "In api/main.py, parse DAILY_SPEND_CAP inside a try/except ValueError at the top of the lifespan function or module level",
+                "If parsing fails, log a clear error and raise RuntimeError to abort startup",
+                "If the value parses but is <= 0, also raise RuntimeError",
+                "A unit test verifies that an invalid env var value causes startup to fail with a descriptive message",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 27,
+            "passes": true,
+            "notes": "SEC-M8 from audit."
+        },
+        {
+            "id": "US-028",
+            "title": "Handle HTTP redirects explicitly in image loader (BUG-04 / SEC-M2)",
+            "description": "As a developer, I need the image loader to handle HTTP 3xx redirects gracefully \u2014 following safe redirects (https\u2192https) while raising a clear ValueError for others.",
+            "acceptanceCriteria": [
+                "In image/loader.py, when fetching remote images, allow follow_redirects=True but re-validate the final URL through check_url() after any redirect",
+                "If the redirect destination fails the SSRF check, raise ValueError('redirect to blocked address')",
+                "If the request fails with a non-2xx status code after following redirects, raise ValueError with the status code",
+                "A unit test verifies that an http\u2192https redirect is followed successfully",
+                "A unit test verifies that a redirect to a private IP is rejected",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 28,
+            "passes": true,
+            "notes": "BUG-04 and SEC-M2 from audit."
+        },
+        {
+            "id": "US-029",
+            "title": "Guard image extractor against non-RGB images (BUG-05)",
+            "description": "As a developer, I need the image extractor to convert any image to RGB before k-means clustering so RGBA, palette, or grayscale images don't crash with a reshape error.",
+            "acceptanceCriteria": [
+                "In image/extractor.py, add img = img.convert('RGB') before the np.array() call",
+                "A unit test passes an RGBA PNG and verifies extract_palette returns a valid list of hex colors",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 29,
+            "passes": true,
+            "notes": "BUG-05 from audit."
+        },
+        {
+            "id": "US-030",
+            "title": "Fix cost estimate using actual token count (BUG-11)",
+            "description": "As a developer, I need the cost estimate in prompt_mode to use the actual token count from the LLM response instead of a hardcoded 0.5 multiplier so spend-cap enforcement is accurate.",
+            "acceptanceCriteria": [
+                "OpenAICompatProvider.generate() returns (text, tokens_used) as a tuple where tokens_used comes from response JSON usage.total_tokens (default 0 if missing)",
+                "In modes/prompt_mode.py, unpack the tuple and use actual token count in cost_per_token calculation",
+                "In providers/registry.py generate_with_fallback(), propagate the token count through to the caller",
+                "The hardcoded '* 0.5' multiplier is removed",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 30,
+            "passes": true,
+            "notes": "BUG-11 from audit."
+        },
+        {
+            "id": "US-031",
+            "title": "Preserve provider error body on raise_for_status (BUG-12)",
+            "description": "As a developer, I need the OpenAI-compat provider to include the API error response body in the exception message so users and logs see 'model not found' instead of just an HTTP status code.",
+            "acceptanceCriteria": [
+                "In providers/openai_compat.py, replace resp.raise_for_status() with: if resp.status_code >= 400: raise httpx.HTTPStatusError(resp.text, request=resp.request, response=resp)",
+                "Or equivalently: catch HTTPStatusError and re-raise with resp.text included in the message",
+                "A unit test verifies that a 404 response with body 'model not found' raises an exception whose str() contains 'model not found'",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 31,
+            "passes": true,
+            "notes": "BUG-12 from audit."
+        },
+        {
+            "id": "US-032",
+            "title": "Declare required Firestore composite index (BUG-13)",
+            "description": "As a developer, I need the Firestore composite index on (query_hash, created_at DESC) declared in firestore.indexes.json so the get_by_hash query doesn't fail at runtime with FailedPrecondition.",
+            "acceptanceCriteria": [
+                "In firestore.indexes.json, add a composite index entry for collection 'themes' with fields: query_hash ASC, created_at DESCENDING",
+                "The JSON is valid and parseable",
+                "Tests pass"
+            ],
+            "priority": 32,
+            "passes": true,
+            "notes": "BUG-13 from audit."
+        },
+        {
+            "id": "US-033",
+            "title": "Fix list_themes called twice in config status (BUG-15)",
+            "description": "As a developer, I need config status to call list_themes only once and reuse the result for both display and count so we avoid a redundant DB query.",
+            "acceptanceCriteria": [
+                "In cli/main.py config_status(), call list_themes() once, store the result, then use len(result) for the count and iterate result for display",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 33,
+            "passes": true,
+            "notes": "BUG-15 from audit."
+        },
+        {
+            "id": "US-034",
+            "title": "Add UNIQUE(query_hash) constraint to themes table (BUG-19)",
+            "description": "As a developer, I need a UNIQUE constraint on the query_hash column of the themes table so concurrent requests cannot insert duplicate themes for the same query.",
+            "acceptanceCriteria": [
+                "In cache/db.py init_db(), add UNIQUE(query_hash) to the CREATE TABLE statement for themes",
+                "In cache/db.py save_theme(), use INSERT OR IGNORE (or ON CONFLICT DO NOTHING) so a duplicate hash is safely skipped",
+                "A unit test verifies that inserting two themes with the same query_hash results in exactly one row",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 34,
+            "passes": true,
+            "notes": "BUG-19 from audit."
+        },
+        {
+            "id": "US-035",
+            "title": "Reuse SQLite connection per repository instance (PERF-M1)",
+            "description": "As a developer, I need ThemeRepository to open one SQLite connection in __init__ and reuse it across calls so we avoid 5+ open/close cycles per request.",
+            "acceptanceCriteria": [
+                "In cache/db.py ThemeRepository.__init__(), open self._conn = sqlite3.connect(...) once with check_same_thread=False",
+                "All methods use self._conn instead of opening a new connection",
+                "Add a close() method and __del__ for cleanup",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 35,
+            "passes": true,
+            "notes": "PERF-M1 from audit."
+        },
+        {
+            "id": "US-036",
+            "title": "Fix EXIF strip memory spike by using img.copy() (PERF-M4)",
+            "description": "As a developer, I need the EXIF stripping in image/loader.py to use img.copy() instead of list(img.getdata()) + putdata() to avoid materializing millions of Python tuples for large images.",
+            "acceptanceCriteria": [
+                "In image/loader.py _strip_exif(), replace the list(img.getdata()) + new Image + putdata() pattern with: clean = Image.new(img.mode, img.size); clean.paste(img); return clean",
+                "Or simply: return img.copy() if img has no EXIF in its info dict, otherwise create a clean copy",
+                "A unit test verifies that EXIF data is stripped from the returned image",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 36,
+            "passes": true,
+            "notes": "PERF-M4 from audit."
+        },
+        {
+            "id": "US-037",
+            "title": "Vectorize cosine similarity with numpy matrix multiply (PERF-M6)",
+            "description": "As a developer, I need the cosine similarity search to use numpy matrix multiplication instead of a Python loop so it scales sub-linearly with cache size.",
+            "acceptanceCriteria": [
+                "In cache/embeddings.py find_similar(), replace the Python for-loop cosine similarity with: scores = (matrix @ query_vec) / (norms * query_norm) using numpy",
+                "matrix is shape (N, D), query_vec is shape (D,), result is shape (N,)",
+                "Return the (id, score) pair for the maximum score if it exceeds the threshold",
+                "A unit test verifies find_similar returns the correct closest match",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 37,
+            "passes": true,
+            "notes": "PERF-M6 from audit."
+        },
+        {
+            "id": "US-038",
+            "title": "Mention local providers in onboarding wizard (CLI-5)",
+            "description": "As a new user running the onboarding wizard, I need to be told about Ollama and other local providers so I understand I can use tty-theme for free without any API key.",
+            "acceptanceCriteria": [
+                "In cli/main.py config_setup() (or equivalent onboarding function), add a section that explains local provider options before prompting for API keys",
+                "The output mentions: 'No API key needed if you have Ollama, LM Studio, or llamafile running locally'",
+                "Includes the auto-detect note: 'tty-theme will auto-detect Ollama at localhost:11434'",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 38,
+            "passes": true,
+            "notes": "CLI-5 from audit. Contradicts local-first positioning."
+        },
+        {
+            "id": "US-039",
+            "title": "Add visual separators to config status output (CLI-6)",
+            "description": "As a user, I need config status output to have clear visual sections so I can quickly scan provider status, cache stats, and spend without the output blurring together.",
+            "acceptanceCriteria": [
+                "In cli/main.py config_status(), add section headers (e.g. '\u2500\u2500 Providers \u2500\u2500', '\u2500\u2500 Cache \u2500\u2500', '\u2500\u2500 Spend \u2500\u2500') between logical groups",
+                "Each section is separated by a blank line",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 39,
+            "passes": true,
+            "notes": "CLI-6 from audit."
+        },
+        {
+            "id": "US-040",
+            "title": "Auto-seed community themes on first run (CLI-9)",
+            "description": "As a new user, I need community themes to be seeded automatically on first use so I get tier-1 and tier-2 cache hits immediately without knowing about the seed command.",
+            "acceptanceCriteria": [
+                "In cli/main.py generate command, check if the theme cache is empty (list_themes(1) returns []) before running the pipeline",
+                "If empty, automatically call the seed logic (load themes/index.json and insert into cache) with a status message: 'Seeding community themes on first run...'",
+                "The auto-seed only runs once \u2014 subsequent calls skip it because the cache is non-empty",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 40,
+            "passes": true,
+            "notes": "CLI-9 from audit. Hidden prerequisite causing Tier 3 hits on first use."
+        },
+        {
+            "id": "US-041",
+            "title": "Simplify web provider UI to Free / BYOK two-choice model",
+            "description": "As a user, I want a simple two-option provider selector (Free tier vs BYOK) so I am not confused by 6 different provider rows. Web UI never exposes local model option.",
+            "acceptanceCriteria": [
+                "Update mockup.html provider selector to show exactly two radio options: Free (Gemini quota, no key needed) and BYOK (paste your own key + dropdown for Groq/Gemini/OpenAI/Claude/Mistral)",
+                "BYOK section only shows key input + provider dropdown when BYOK radio is selected",
+                "Generate button is disabled until: Free is selected (always enabled) OR BYOK is selected and key field is non-empty (fixes WEB-1)",
+                "Remove the Local LLM (BYOK-Local) option from the web UI provider selector entirely",
+                "Update PRD \u00a76.2 Web UI / Hosted Mode to document the simplified two-mode selector",
+                "Tests pass"
+            ],
+            "priority": 41,
+            "passes": true,
+            "notes": "Simplification per user decision. Local LLM stays CLI-only. Also fixes WEB-1 (generate button enabled before key entered)."
+        }
+    ]
+}
