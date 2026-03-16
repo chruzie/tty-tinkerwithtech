@@ -149,3 +149,19 @@ async def test_neofetch_not_found(client):
     async with client as c:
         resp = await c.get("/v1/neofetch/does-not-exist")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_neofetch_returns_real_colors(client):
+    """Regression: palette = N = #hex lines must be parsed correctly (not grey fallback)."""
+    async with client as c:
+        # Publish a theme with known palette color 0 = #ff0000
+        theme = "\n".join(
+            [f"palette = {i} = #ff{i:02x}{i:02x}" for i in range(16)]
+        ) + "\nbackground = #0a0a0a\nforeground = #f0f0f0\ncursor-color = #f0f0f0\nselection-background = #1a1a1a\nselection-foreground = #f0f0f0"
+        await c.post("/v1/themes", json={"name": "Neofetch Test", "theme_data": theme})
+        resp = await c.get("/v1/neofetch/neofetch-test")
+    assert resp.status_code == 200
+    body = resp.text
+    # Color 0 is #ff0000 → R=255,G=0,B=0 → ANSI escape must contain "255;0;0"
+    assert "255;0;0" in body
