@@ -233,6 +233,14 @@ def generate(req: GenerateRequest, request: Request):
             },
         ) from exc
 
+    # 5a. Global daily spend cap
+    _spend_cap = float(os.environ.get("DAILY_SPEND_CAP", "1.00"))
+    if repo.get_daily_spend() >= _spend_cap:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "spend_cap_exceeded", "message": "Daily generation limit reached. Try again tomorrow."},
+        )
+
     # 5. LLM generation
     from generator.prompt import build_user_prompt, SYSTEM_PROMPT
     from generator.validator import validate_theme

@@ -446,7 +446,7 @@ tty-tinkerwithtech/
 
 ### Remaining pre-deploy tasks
 
-1. **Restore global spend cap** — add `DAILY_SPEND_CAP` check to `POST /v1/generate` in `api/main.py` before the LLM call. Default `$1.00/day`. Set via Cloud Run env var `DAILY_SPEND_CAP=1.00`.
+1. ✓ **Global spend cap** — `DAILY_SPEND_CAP` env var checked in `POST /v1/generate` before LLM call. Default `$1.00/day`. Returns 503 if exceeded.
 
 2. **Update lock file** — run `uv sync` after v1.3 dep removals (typer, keyring, pillow, scikit-learn, imagehash removed) and commit the updated `uv.lock`.
 
