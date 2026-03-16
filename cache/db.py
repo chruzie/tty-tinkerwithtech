@@ -35,17 +35,18 @@ class ThemeRepository:
         with self._conn:
             self._conn.executescript("""
                 CREATE TABLE IF NOT EXISTS themes (
-                    id          INTEGER PRIMARY KEY,
-                    query_hash  TEXT NOT NULL UNIQUE,
-                    query_raw   TEXT,
-                    input_type  TEXT NOT NULL,
-                    name        TEXT,
-                    theme_data  TEXT NOT NULL,
-                    embedding   TEXT,
-                    source      TEXT DEFAULT 'ai',
-                    provider    TEXT,
-                    cost_usd    REAL DEFAULT 0.0,
-                    created_at  TEXT DEFAULT (datetime('now'))
+                    id             INTEGER PRIMARY KEY,
+                    query_hash     TEXT NOT NULL UNIQUE,
+                    query_raw      TEXT,
+                    input_type     TEXT NOT NULL,
+                    name           TEXT,
+                    theme_data     TEXT NOT NULL,
+                    embedding      TEXT,
+                    source         TEXT DEFAULT 'ai',
+                    provider       TEXT,
+                    cost_usd       REAL DEFAULT 0.0,
+                    download_count INTEGER DEFAULT 0,
+                    created_at     TEXT DEFAULT (datetime('now'))
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_themes_query_hash
@@ -73,9 +74,11 @@ class ThemeRepository:
                 );
 
                 CREATE TABLE IF NOT EXISTS rate_limits (
-                    ip_hash     TEXT PRIMARY KEY,
-                    tokens      REAL NOT NULL DEFAULT 10.0,
-                    last_refill TEXT NOT NULL DEFAULT (datetime('now'))
+                    ip_hash           TEXT PRIMARY KEY,
+                    daily_count       INTEGER NOT NULL DEFAULT 0,
+                    day               TEXT NOT NULL DEFAULT '',
+                    burst_timestamps  TEXT NOT NULL DEFAULT '[]',
+                    burst_offense_count INTEGER NOT NULL DEFAULT 0
                 );
             """)
 
@@ -173,6 +176,66 @@ class ThemeRepository:
                 """,
                 (ip_hash, query_hash, input_type, provider, tier_used, cost_usd, status),
             )
+
+    def get_rate_limit(self, ip_hash: str) -> dict[str, Any] | None:
+        """Return rate limit state for ip_hash, or None if not found."""
+        row = self._conn.execute(
+            "SELECT * FROM rate_limits WHERE ip_hash = ?", (ip_hash,)
+        ).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        # If stored day != today, treat count as 0
+        today = date.today().isoformat()
+        if result.get("day") != today:
+            result["daily_count"] = 0
+        return result
+
+    def upsert_rate_limit(
+        self,
+        ip_hash: str,
+        daily_count: int,
+        day: str,
+        burst_timestamps: list[str],
+        burst_offense_count: int,
+    ) -> None:
+        """Insert or replace rate limit state for ip_hash."""
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO rate_limits
+                    (ip_hash, daily_count, day, burst_timestamps, burst_offense_count)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(ip_hash) DO UPDATE SET
+                    daily_count = excluded.daily_count,
+                    day = excluded.day,
+                    burst_timestamps = excluded.burst_timestamps,
+                    burst_offense_count = excluded.burst_offense_count
+                """,
+                (ip_hash, daily_count, day, json.dumps(burst_timestamps), burst_offense_count),
+            )
+
+    def increment_download_count(self, slug: str) -> int:
+        """Increment download_count for the theme matching slug; return new count.
+
+        Matches slug by comparing make_slug(name) == slug.
+        Returns 0 if no matching theme found.
+        """
+        from generator.slug import make_slug
+
+        rows = self._conn.execute(
+            "SELECT id, name, download_count FROM themes WHERE name IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            if make_slug(row["name"]) == slug:
+                new_count = (row["download_count"] or 0) + 1
+                with self._conn:
+                    self._conn.execute(
+                        "UPDATE themes SET download_count = ? WHERE id = ?",
+                        (new_count, row["id"]),
+                    )
+                return new_count
+        return 0
 
     def get_daily_spend(self) -> float:
         """Return total cost_usd spent today across all providers."""

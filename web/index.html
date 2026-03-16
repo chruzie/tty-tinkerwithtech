@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tty-theme — Terminal Theme Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col items-center py-16 px-4">
+
+  <header class="mb-10 text-center">
+    <h1 class="text-4xl font-bold tracking-tight">tty-theme</h1>
+    <p class="mt-2 text-gray-400">Generate terminal color themes from natural language.</p>
+  </header>
+
+  <main class="w-full max-w-2xl space-y-6">
+
+    <!-- Prompt input -->
+    <div>
+      <label for="prompt" class="block text-sm text-gray-400 mb-1">Inspiration prompt</label>
+      <textarea
+        id="prompt"
+        maxlength="200"
+        rows="3"
+        placeholder="e.g. cyberpunk neon rain, tokyo midnight, forest at dusk..."
+        class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-gray-100
+               placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500
+               resize-none"
+      ></textarea>
+      <div class="text-right text-xs text-gray-500 mt-1">
+        <span id="char-count">0</span> / 200
+      </div>
+    </div>
+
+    <!-- Generate button + spinner -->
+    <div class="flex items-center gap-4">
+      <button
+        id="generate-btn"
+        class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed
+               text-white font-semibold px-6 py-2.5 rounded-lg transition"
+      >Generate</button>
+      <span id="spinner" class="hidden text-gray-400 text-sm animate-pulse">Generating...</span>
+      <span id="cooldown-msg" class="hidden text-yellow-400 text-sm"></span>
+    </div>
+
+    <!-- Error banner -->
+    <div id="error-banner" class="hidden bg-red-900/50 border border-red-700 text-red-300 rounded-lg px-4 py-3 text-sm"></div>
+
+    <!-- Rate limit countdown -->
+    <div id="rate-limit-msg" class="hidden bg-yellow-900/40 border border-yellow-700 text-yellow-300 rounded-lg px-4 py-3 text-sm"></div>
+
+    <!-- Result area -->
+    <div id="result" class="hidden space-y-4">
+      <div>
+        <p class="text-xs text-gray-500 mb-2 uppercase tracking-widest">Color palette</p>
+        <div id="swatch-strip" class="flex h-10 rounded overflow-hidden"></div>
+      </div>
+
+      <div class="flex gap-3 flex-wrap">
+        <button id="download-ghostty" class="bg-gray-800 hover:bg-gray-700 text-sm text-gray-100 px-4 py-2 rounded-lg transition">
+          Download Ghostty
+        </button>
+        <button id="download-iterm2" class="bg-gray-800 hover:bg-gray-700 text-sm text-gray-100 px-4 py-2 rounded-lg transition">
+          Download iTerm2
+        </button>
+      </div>
+
+      <!-- Publish -->
+      <div class="border-t border-gray-800 pt-4">
+        <p class="text-xs text-gray-500 mb-2">Share to community gallery</p>
+        <div class="flex gap-2">
+          <input
+            id="publish-name"
+            type="text"
+            placeholder="Theme name..."
+            class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm
+                   placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+          <button id="publish-btn" class="bg-indigo-700 hover:bg-indigo-600 text-sm text-white px-4 py-2 rounded transition">
+            Publish
+          </button>
+        </div>
+        <p id="publish-result" class="hidden text-green-400 text-sm mt-2"></p>
+      </div>
+    </div>
+
+  </main>
+
+  <nav class="mt-12 text-sm text-gray-500">
+    <a href="gallery.html" class="hover:text-gray-300 transition">Browse gallery</a>
+  </nav>
+
+<script>
+const API = '';  // same origin; set to 'https://api.tty-theme.dev' for prod
+
+let _currentThemeData = null;
+let _currentSlug = null;
+
+// ── Character counter ─────────────────────────────────────────────────────────
+const promptEl = document.getElementById('prompt');
+const charCountEl = document.getElementById('char-count');
+promptEl.addEventListener('input', () => {
+  charCountEl.textContent = String(promptEl.value.length);
+});
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+document.getElementById('generate-btn').addEventListener('click', async () => {
+  const prompt = promptEl.value.trim();
+  if (!prompt) return;
+
+  setLoading(true);
+  clearError();
+  hideResult();
+
+  try {
+    const resp = await fetch(API + '/v1/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    const data = await resp.json();
+
+    if (resp.status === 400 && data.detail && data.detail.error === 'prompt_too_long') {
+      showError('Prompt is too long (max 200 characters).');
+      return;
+    }
+    if (resp.status === 429) {
+      const detail = data.detail || {};
+      if (detail.cooldown_seconds > 0) {
+        startCooldown(detail.cooldown_seconds);
+      } else {
+        startDailyLimitCountdown(detail.reset_at);
+      }
+      return;
+    }
+    if (!resp.ok) {
+      showError('Generation failed. Please try again.');
+      return;
+    }
+
+    _currentThemeData = data.theme_data;
+    _currentSlug = data.slug;
+    renderSwatches(data.theme_data);
+    document.getElementById('result').classList.remove('hidden');
+
+  } catch (_err) {
+    showError('Network error. Please check your connection.');
+  } finally {
+    setLoading(false);
+  }
+});
+
+// ── Render swatches ───────────────────────────────────────────────────────────
+function renderSwatches(themeData) {
+  const colors = parseThemeColors(themeData);
+  const strip = document.getElementById('swatch-strip');
+  while (strip.firstChild) strip.removeChild(strip.firstChild);
+  for (let i = 0; i < 16; i++) {
+    const hex = colors['palette = ' + String(i)] || '#888888';
+    const div = document.createElement('div');
+    div.style.flex = '1';
+    div.style.backgroundColor = hex;
+    div.title = hex;
+    strip.appendChild(div);
+  }
+}
+
+function parseThemeColors(themeData) {
+  const map = {};
+  const lines = themeData.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx === -1) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const val = trimmed.slice(idx + 1).trim();
+    map[key] = val;
+  }
+  return map;
+}
+
+// ── Downloads ─────────────────────────────────────────────────────────────────
+document.getElementById('download-ghostty').addEventListener('click', async () => {
+  if (!_currentThemeData || !_currentSlug) return;
+  triggerDownload(_currentSlug + '.ghostty', _currentThemeData, 'text/plain');
+  fetch(API + '/v1/themes/' + _currentSlug + '/download', { method: 'POST' }).catch(() => {});
+});
+
+document.getElementById('download-iterm2').addEventListener('click', async () => {
+  if (!_currentThemeData || !_currentSlug) return;
+  const xml = ghosttyToIterm2(_currentThemeData, _currentSlug);
+  triggerDownload(_currentSlug + '.itermcolors', xml, 'application/xml');
+  fetch(API + '/v1/themes/' + _currentSlug + '/download', { method: 'POST' }).catch(() => {});
+});
+
+function triggerDownload(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function ghosttyToIterm2(themeData, name) {
+  const colors = parseThemeColors(themeData);
+  const parts = [];
+
+  const addColor = (key, r, g, b) => {
+    parts.push(
+      '\t\t<key>' + key + '</key>\n\t\t<dict>\n' +
+      '\t\t\t<key>Red Component</key><real>' + (r / 255).toFixed(6) + '</real>\n' +
+      '\t\t\t<key>Green Component</key><real>' + (g / 255).toFixed(6) + '</real>\n' +
+      '\t\t\t<key>Blue Component</key><real>' + (b / 255).toFixed(6) + '</real>\n' +
+      '\t\t\t<key>Alpha Component</key><real>1</real>\n\t\t</dict>'
+    );
+  };
+
+  for (let i = 0; i < 16; i++) {
+    const [r, g, b] = hexToRgb(colors['palette = ' + String(i)] || '#888888');
+    addColor('Ansi ' + String(i) + ' Color', r, g, b);
+  }
+  const [br, bg2, bb] = hexToRgb(colors['background'] || '#000000');
+  addColor('Background Color', br, bg2, bb);
+  const [fr, fg, fb] = hexToRgb(colors['foreground'] || '#ffffff');
+  addColor('Foreground Color', fr, fg, fb);
+
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
+    '<plist version="1.0">\n<dict>\n' + parts.join('\n') + '\n</dict>\n</plist>';
+}
+
+// ── Publish ───────────────────────────────────────────────────────────────────
+document.getElementById('publish-btn').addEventListener('click', async () => {
+  if (!_currentThemeData) return;
+  const name = document.getElementById('publish-name').value.trim();
+  if (!name) return;
+
+  const resp = await fetch(API + '/v1/themes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name, theme_data: _currentThemeData }),
+  });
+  const data = await resp.json();
+  const resultEl = document.getElementById('publish-result');
+  if (resp.status === 201) {
+    resultEl.textContent = 'Published! ' + window.location.origin + '/theme.html?slug=' + data.slug;
+    resultEl.classList.remove('hidden');
+  } else if (resp.status === 409) {
+    const slug = data.detail && data.detail.slug ? data.detail.slug : name;
+    resultEl.textContent = 'Already published at ' + window.location.origin + '/theme.html?slug=' + slug;
+    resultEl.classList.remove('hidden');
+  }
+});
+
+// ── Rate limit UI ─────────────────────────────────────────────────────────────
+function startCooldown(seconds) {
+  const btn = document.getElementById('generate-btn');
+  const msg = document.getElementById('cooldown-msg');
+  btn.disabled = true;
+  msg.classList.remove('hidden');
+  let remaining = seconds;
+  const tick = () => {
+    msg.textContent = 'Please wait ' + String(remaining) + 's...';
+    if (remaining-- <= 0) {
+      btn.disabled = false;
+      msg.classList.add('hidden');
+      msg.textContent = '';
+    } else {
+      setTimeout(tick, 1000);
+    }
+  };
+  tick();
+}
+
+function startDailyLimitCountdown(resetAt) {
+  const el = document.getElementById('rate-limit-msg');
+  el.classList.remove('hidden');
+  const resetDate = new Date(resetAt);
+  const tick = () => {
+    const diff = Math.max(0, Math.floor((resetDate.getTime() - Date.now()) / 1000));
+    const h = String(Math.floor(diff / 3600)).padStart(2, '0');
+    const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+    const s = String(diff % 60).padStart(2, '0');
+    el.textContent = 'Daily limit reached. Resets in ' + h + ':' + m + ':' + s;
+    if (diff > 0) setTimeout(tick, 1000);
+  };
+  tick();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function setLoading(on) {
+  document.getElementById('generate-btn').disabled = on;
+  const spinner = document.getElementById('spinner');
+  if (on) spinner.classList.remove('hidden');
+  else spinner.classList.add('hidden');
+}
+function clearError() { document.getElementById('error-banner').classList.add('hidden'); }
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+function hideResult() { document.getElementById('result').classList.add('hidden'); }
+</script>
+</body>
+</html>

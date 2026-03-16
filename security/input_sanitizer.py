@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-import warnings
 
-_MAX_BYTES = 200
+_MAX_CHARS = 200
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -26,13 +25,14 @@ def sanitize_prompt(text: str) -> str:
     1. Strip ASCII/Unicode control characters (Cc, Cf) to prevent log injection.
     2. NFKC unicode normalization (homoglyphs, ligatures, etc.)
     3. Strip leading/trailing whitespace; collapse internal whitespace.
-    4. Truncate to 200 UTF-8 bytes with a warning if over limit.
+    4. Raise ValueError('prompt_too_long') if len > 200 characters.
 
     Returns:
-        Cleaned string, guaranteed <= 200 UTF-8 bytes.
+        Cleaned string.
 
     Raises:
         ValueError: if the input is empty after normalization.
+        ValueError: 'prompt_too_long' if the stripped input exceeds 200 characters.
     """
     # Step 1: Strip control characters
     text = _strip_control_chars(text)
@@ -47,15 +47,8 @@ def sanitize_prompt(text: str) -> str:
     if not normalized:
         raise ValueError("Prompt is empty after sanitization")
 
-    # Step 5: Truncate to 200 UTF-8 bytes
-    encoded = normalized.encode("utf-8")
-    if len(encoded) > _MAX_BYTES:
-        warnings.warn(
-            f"Prompt truncated from {len(encoded)} to {_MAX_BYTES} UTF-8 bytes.",
-            stacklevel=2,
-        )
-        # Truncate safely on UTF-8 boundaries
-        truncated = encoded[:_MAX_BYTES]
-        normalized = truncated.decode("utf-8", errors="ignore")
+    # Step 5: Raise if too long
+    if len(normalized) > _MAX_CHARS:
+        raise ValueError("prompt_too_long")
 
     return normalized

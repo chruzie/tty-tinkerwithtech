@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tty-theme Gallery</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen px-4 py-12">
+
+  <header class="max-w-5xl mx-auto mb-10 flex items-center justify-between">
+    <div>
+      <h1 class="text-3xl font-bold">Community Gallery</h1>
+      <p class="text-gray-400 text-sm mt-1">Browse terminal themes created by the community.</p>
+    </div>
+    <a href="index.html" class="text-sm text-indigo-400 hover:text-indigo-300 transition">+ Generate new</a>
+  </header>
+
+  <!-- Sort controls -->
+  <div class="max-w-5xl mx-auto mb-6 flex gap-3">
+    <button id="sort-newest" class="sort-btn bg-indigo-700 text-white text-sm px-4 py-1.5 rounded-full" data-sort="newest">
+      Newest
+    </button>
+    <button id="sort-downloads" class="sort-btn bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm px-4 py-1.5 rounded-full transition" data-sort="downloads">
+      Most Downloaded
+    </button>
+  </div>
+
+  <!-- Theme grid -->
+  <main id="grid" class="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></main>
+
+  <!-- Empty state -->
+  <div id="empty-state" class="hidden max-w-5xl mx-auto text-center text-gray-500 mt-20">
+    No themes yet. Be the first to generate and publish one!
+  </div>
+
+  <!-- Loading indicator -->
+  <div id="loading" class="max-w-5xl mx-auto text-center text-gray-500 mt-10">Loading...</div>
+
+<script>
+const API = '';
+let currentSort = 'newest';
+
+async function loadThemes(sort) {
+  document.getElementById('loading').classList.remove('hidden');
+  document.getElementById('grid').textContent = '';
+  document.getElementById('empty-state').classList.add('hidden');
+
+  try {
+    const resp = await fetch(API + '/v1/themes?sort=' + sort + '&limit=50');
+    if (!resp.ok) throw new Error('Failed to load');
+    const data = await resp.json();
+    renderThemes(data.themes || []);
+  } catch (_err) {
+    document.getElementById('loading').textContent = 'Failed to load themes. Please try again.';
+  }
+}
+
+function parseThemeColors(themeData) {
+  const map = {};
+  const lines = themeData.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx === -1) continue;
+    map[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
+  }
+  return map;
+}
+
+function renderThemes(themes) {
+  document.getElementById('loading').classList.add('hidden');
+  const grid = document.getElementById('grid');
+
+  if (themes.length === 0) {
+    document.getElementById('empty-state').classList.remove('hidden');
+    return;
+  }
+
+  for (const theme of themes) {
+    const card = document.createElement('a');
+    card.href = 'theme.html?slug=' + encodeURIComponent(theme.slug);
+    card.className = 'block bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-gray-600 transition cursor-pointer';
+
+    // Theme name
+    const nameEl = document.createElement('p');
+    nameEl.className = 'font-semibold text-sm mb-3 truncate';
+    nameEl.textContent = theme.name || theme.slug;
+    card.appendChild(nameEl);
+
+    // 8-color swatch strip
+    const colors = parseThemeColors(theme.theme_data || '');
+    const swatchRow = document.createElement('div');
+    swatchRow.className = 'flex h-6 rounded overflow-hidden mb-3';
+    for (let i = 0; i < 8; i++) {
+      const hex = colors['palette = ' + String(i)] || '#888888';
+      const swatch = document.createElement('div');
+      swatch.style.flex = '1';
+      swatch.style.backgroundColor = hex;
+      swatchRow.appendChild(swatch);
+    }
+    card.appendChild(swatchRow);
+
+    // Footer: download count + install chip
+    const footer = document.createElement('div');
+    footer.className = 'flex items-center justify-between mt-1';
+
+    const dlBadge = document.createElement('span');
+    dlBadge.className = 'text-xs text-gray-500';
+    dlBadge.textContent = String(theme.download_count || 0) + ' downloads';
+    footer.appendChild(dlBadge);
+
+    const chip = document.createElement('button');
+    chip.className = 'text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded font-mono transition';
+    chip.textContent = 'tty-theme install ' + theme.slug;
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      navigator.clipboard.writeText('tty-theme install ' + theme.slug).catch(() => {});
+      chip.textContent = 'Copied!';
+      setTimeout(() => { chip.textContent = 'tty-theme install ' + theme.slug; }, 1500);
+    });
+    footer.appendChild(chip);
+    card.appendChild(footer);
+
+    grid.appendChild(card);
+  }
+}
+
+// ── Sort toggle ───────────────────────────────────────────────────────────────
+document.querySelectorAll('.sort-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const sort = btn.dataset.sort;
+    currentSort = sort;
+    document.querySelectorAll('.sort-btn').forEach(b => {
+      b.className = b === btn
+        ? 'sort-btn bg-indigo-700 text-white text-sm px-4 py-1.5 rounded-full'
+        : 'sort-btn bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm px-4 py-1.5 rounded-full transition';
+    });
+    loadThemes(sort);
+  });
+});
+
+loadThemes(currentSort);
+</script>
+</body>
+</html>

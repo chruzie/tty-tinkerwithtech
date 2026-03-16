@@ -19,16 +19,17 @@ _health_cache: dict[str, tuple[bool, float]] = {}
 _HEALTH_TTL = 30.0  # seconds
 
 # (name, base_url, default_model, key_name, cost_per_1k, is_local)
+# Server-side order: gemini first, then groq as 429 fallback
 CATALOGUE: list[tuple[str, str, str, str | None, float, bool]] = [
+    ("gemini",   "https://generativelanguage.googleapis.com/v1beta/openai",
+                 "gemini-2.0-flash",          "gemini",   0.0,     False),
+    ("groq",     "https://api.groq.com/openai/v1",
+                 "llama-3.3-70b-versatile",   "groq",     0.0,     False),
+    ("openai",   "https://api.openai.com/v1", "gpt-4o-mini",          "openai",   0.00015, False),
+    ("mistral",  "https://api.mistral.ai/v1", "mistral-small-latest", "mistral",  0.0002,  False),
     ("ollama",   "http://localhost:11434/v1", "llama3",               None,       0.0,     True),
     ("lmstudio", "http://localhost:1234/v1",  "local-model",          None,       0.0,     True),
     ("llamafile","http://localhost:8080/v1",  "local-model",          None,       0.0,     True),
-    ("groq",     "https://api.groq.com/openai/v1",
-                 "llama-3.1-8b-instant",      "groq",     0.0,     False),
-    ("gemini",   "https://generativelanguage.googleapis.com/v1beta/openai",
-                 "gemini-2.0-flash",          "gemini",   0.0,     False),
-    ("openai",   "https://api.openai.com/v1", "gpt-4o-mini",          "openai",   0.00015, False),
-    ("mistral",  "https://api.mistral.ai/v1", "mistral-small-latest", "mistral",  0.0002,  False),
 ]
 
 

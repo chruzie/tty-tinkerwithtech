@@ -60,30 +60,40 @@ def resolve_provider(preferred: str | None = None) -> OpenAICompatProvider:
 
 
 def generate_with_fallback(
-    prompt: dict[str, str],
+    prompt: str,
+    system: str,
     preferred: str | None = None,
-) -> tuple[str, str, int]:
+) -> str:
     """Generate a theme string with automatic 429 fallback across providers.
 
+    Tries gemini first (server-side default), then groq on HTTP 429.
+    Non-429 errors propagate immediately.
+
+    Args:
+        prompt: User-turn text (already wrapped by build_user_prompt).
+        system: System prompt string.
+        preferred: Optional provider name to try first.
+
     Returns:
-        (theme_str, provider_name, tokens_used) — raw LLM output, provider, and token count.
+        Raw LLM output string.
 
     Raises:
         RuntimeError: if all available providers are exhausted (throttled or failed).
     """
+    prompt_dict = {"system": system, "user": prompt}
     chain = _build_chain(preferred)
     available = [p for p in chain if p.health_check()]
 
     if not available:
         raise RuntimeError(
-            "No LLM provider available. Run `tty-theme config setup` to configure one."
+            "No LLM provider available. Configure GEMINI_API_KEY or GROQ_API_KEY."
         )
 
     errors: list[str] = []
     for provider in available:
         try:
-            content, tokens = provider.generate(prompt)
-            return content, provider.name, tokens
+            content, _tokens = provider.generate(prompt_dict)
+            return content
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 429:  # noqa: PLR2004
                 errors.append(f"{provider.name}: throttled (429)")

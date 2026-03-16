@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tty-theme — Theme Detail</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen px-4 py-12">
+
+  <nav class="max-w-2xl mx-auto mb-8 text-sm">
+    <a href="gallery.html" class="text-indigo-400 hover:text-indigo-300 transition">Gallery</a>
+    <span class="text-gray-600 mx-2">/</span>
+    <span id="breadcrumb" class="text-gray-400"></span>
+  </nav>
+
+  <!-- 404 state -->
+  <div id="not-found" class="hidden max-w-2xl mx-auto text-center text-gray-500 mt-20">
+    <p class="text-xl">Theme not found.</p>
+    <a href="gallery.html" class="mt-4 inline-block text-indigo-400 hover:text-indigo-300 transition">Browse gallery</a>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading" class="max-w-2xl mx-auto text-center text-gray-500 mt-20">Loading...</div>
+
+  <!-- Theme detail -->
+  <main id="theme-detail" class="hidden max-w-2xl mx-auto space-y-6">
+    <div class="flex items-start justify-between">
+      <h1 id="theme-name" class="text-3xl font-bold"></h1>
+      <span id="download-badge" class="text-sm text-gray-500 mt-2"></span>
+    </div>
+
+    <!-- Full 16-color swatch strip -->
+    <div>
+      <p class="text-xs text-gray-500 mb-2 uppercase tracking-widest">16-Color Palette</p>
+      <div id="swatch-strip" class="flex h-12 rounded overflow-hidden"></div>
+    </div>
+
+    <!-- Download buttons -->
+    <div class="flex gap-3 flex-wrap">
+      <button id="download-ghostty" class="bg-gray-800 hover:bg-gray-700 text-sm text-gray-100 px-4 py-2 rounded-lg transition">
+        Download Ghostty
+      </button>
+      <button id="download-iterm2" class="bg-gray-800 hover:bg-gray-700 text-sm text-gray-100 px-4 py-2 rounded-lg transition">
+        Download iTerm2
+      </button>
+    </div>
+
+    <!-- Neofetch preview -->
+    <div>
+      <p class="text-xs text-gray-500 mb-2 uppercase tracking-widest">Terminal Preview</p>
+      <pre id="neofetch" class="bg-gray-900 rounded-lg p-4 text-sm font-mono overflow-x-auto whitespace-pre"></pre>
+    </div>
+  </main>
+
+<script>
+const API = '';
+let _themeData = null;
+let _slug = null;
+
+function parseThemeColors(themeData) {
+  const map = {};
+  const lines = themeData.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx === -1) continue;
+    map[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
+  }
+  return map;
+}
+
+async function loadTheme(slug) {
+  try {
+    const resp = await fetch(API + '/v1/themes/' + encodeURIComponent(slug));
+    if (resp.status === 404) {
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('not-found').classList.remove('hidden');
+      return;
+    }
+    if (!resp.ok) throw new Error('Failed');
+    const theme = await resp.json();
+
+    _themeData = theme.theme_data;
+    _slug = slug;
+
+    // Breadcrumb
+    document.getElementById('breadcrumb').textContent = theme.name || slug;
+    document.title = 'tty-theme — ' + (theme.name || slug);
+
+    // Title + badge
+    document.getElementById('theme-name').textContent = theme.name || slug;
+    document.getElementById('download-badge').textContent = String(theme.download_count || 0) + ' downloads';
+
+    // Swatches
+    const colors = parseThemeColors(theme.theme_data);
+    const strip = document.getElementById('swatch-strip');
+    while (strip.firstChild) strip.removeChild(strip.firstChild);
+    for (let i = 0; i < 16; i++) {
+      const hex = colors['palette = ' + String(i)] || '#888888';
+      const div = document.createElement('div');
+      div.style.flex = '1';
+      div.style.backgroundColor = hex;
+      div.title = hex;
+      strip.appendChild(div);
+    }
+
+    // Load neofetch preview
+    loadNeofetch(slug);
+
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('theme-detail').classList.remove('hidden');
+
+  } catch (_err) {
+    document.getElementById('loading').textContent = 'Failed to load theme.';
+  }
+}
+
+async function loadNeofetch(slug) {
+  try {
+    const resp = await fetch(API + '/v1/neofetch/' + encodeURIComponent(slug));
+    if (!resp.ok) return;
+    const text = await resp.text();
+    document.getElementById('neofetch').textContent = text;
+  } catch (_err) {
+    // Silently ignore — preview is optional
+  }
+}
+
+// ── Downloads ─────────────────────────────────────────────────────────────────
+document.getElementById('download-ghostty').addEventListener('click', async () => {
+  if (!_themeData || !_slug) return;
+  triggerDownload(_slug + '.ghostty', _themeData, 'text/plain');
+  fetch(API + '/v1/themes/' + _slug + '/download', { method: 'POST' }).catch(() => {});
+  const badge = document.getElementById('download-badge');
+  const current = parseInt(badge.textContent) || 0;
+  badge.textContent = String(current + 1) + ' downloads';
+});
+
+document.getElementById('download-iterm2').addEventListener('click', async () => {
+  if (!_themeData || !_slug) return;
+  const xml = ghosttyToIterm2(_themeData, _slug);
+  triggerDownload(_slug + '.itermcolors', xml, 'application/xml');
+  fetch(API + '/v1/themes/' + _slug + '/download', { method: 'POST' }).catch(() => {});
+  const badge = document.getElementById('download-badge');
+  const current = parseInt(badge.textContent) || 0;
+  badge.textContent = String(current + 1) + ' downloads';
+});
+
+function triggerDownload(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function ghosttyToIterm2(themeData, name) {
+  const colors = parseThemeColors(themeData);
+  const parts = [];
+  const addColor = (key, r, g, b) => {
+    parts.push(
+      '\t\t<key>' + key + '</key>\n\t\t<dict>\n' +
+      '\t\t\t<key>Red Component</key><real>' + (r / 255).toFixed(6) + '</real>\n' +
+      '\t\t\t<key>Green Component</key><real>' + (g / 255).toFixed(6) + '</real>\n' +
+      '\t\t\t<key>Blue Component</key><real>' + (b / 255).toFixed(6) + '</real>\n' +
+      '\t\t\t<key>Alpha Component</key><real>1</real>\n\t\t</dict>'
+    );
+  };
+  for (let i = 0; i < 16; i++) {
+    const [r, g, b] = hexToRgb(colors['palette = ' + String(i)] || '#888888');
+    addColor('Ansi ' + String(i) + ' Color', r, g, b);
+  }
+  const [br, bg2, bb] = hexToRgb(colors['background'] || '#000000');
+  addColor('Background Color', br, bg2, bb);
+  const [fr, fg, fb] = hexToRgb(colors['foreground'] || '#ffffff');
+  addColor('Foreground Color', fr, fg, fb);
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
+    '<plist version="1.0">\n<dict>\n' + parts.join('\n') + '\n</dict>\n</plist>';
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+const params = new URLSearchParams(window.location.search);
+const slug = params.get('slug');
+if (slug) {
+  loadTheme(slug);
+} else {
+  document.getElementById('loading').classList.add('hidden');
+  document.getElementById('not-found').classList.remove('hidden');
+}
+</script>
+</body>
+</html>

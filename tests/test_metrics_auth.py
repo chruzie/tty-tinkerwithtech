@@ -14,7 +14,11 @@ def client():
     from httpx import ASGITransport, AsyncClient
 
     from api.main import app
+    from api.middleware import _hour_buckets, _minute_buckets
     from cache.db import ThemeRepository
+
+    _minute_buckets.clear()
+    _hour_buckets.clear()
 
     with tempfile.TemporaryDirectory() as d:
         repo = ThemeRepository(db_path=Path(d) / "test.db")
@@ -42,6 +46,7 @@ async def test_metrics_no_token_env_allows_access(client):
 @pytest.mark.asyncio
 async def test_metrics_with_token_requires_auth(client):
     """When METRICS_TOKEN is set, /metrics returns 403 without correct header."""
+    pytest.importorskip("prometheus_client")
     with patch.dict("os.environ", {"METRICS_TOKEN": "secret123"}):
         async with client as c:
             resp = await c.get("/metrics")
@@ -51,6 +56,7 @@ async def test_metrics_with_token_requires_auth(client):
 @pytest.mark.asyncio
 async def test_metrics_with_token_wrong_token_rejected(client):
     """Wrong bearer token is rejected with 403."""
+    pytest.importorskip("prometheus_client")
     with patch.dict("os.environ", {"METRICS_TOKEN": "secret123"}):
         async with client as c:
             resp = await c.get("/metrics", headers={"Authorization": "Bearer wrong"})

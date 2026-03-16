@@ -60,9 +60,13 @@ def test_tab_and_newline_preserved_before_collapse() -> None:
     assert result == "hello world"
 
 
-def test_truncation_with_warning(recwarn: pytest.WarningsChecker) -> None:
-    long_prompt = "a" * 300
-    result = sanitize_prompt(long_prompt)
-    assert len(result.encode("utf-8")) <= 200
-    assert len(recwarn) == 1
-    assert "truncated" in str(recwarn[0].message).lower()
+def test_prompt_too_long_raises() -> None:
+    long_prompt = "a" * 201
+    with pytest.raises(ValueError, match="prompt_too_long"):
+        sanitize_prompt(long_prompt)
+
+
+def test_prompt_at_200_chars_is_ok() -> None:
+    ok_prompt = "a" * 200
+    result = sanitize_prompt(ok_prompt)
+    assert result == ok_prompt

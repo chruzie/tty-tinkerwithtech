@@ -156,7 +156,40 @@ class TestRegistry:
             patch("providers.openai_compat.httpx.Client", return_value=mock_client),
             patch("security.keystore.get_key", return_value="fake-key"),
         ):
-            result, provider_name, tokens = generate_with_fallback({"system": "s", "user": "u"})
+            result = generate_with_fallback("user prompt", "system prompt")
             assert result == "theme output"
-            assert tokens == 8
             assert call_count == 2
+
+    def test_non_429_error_propagates_immediately(self):
+        """Non-429 HTTP errors must propagate without trying the next provider."""
+        import httpx
+
+        from providers.registry import generate_with_fallback
+
+        call_count = 0
+
+        def fake_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            r = MagicMock()
+            r.status_code = 500
+            raise httpx.HTTPStatusError("500", request=MagicMock(), response=r)
+
+        mock_client = MagicMock()
+        mock_client.get.return_value = MagicMock(status_code=200)
+        mock_client.post.side_effect = fake_post
+
+        with (
+            patch("providers.openai_compat.httpx.Client", return_value=mock_client),
+            patch("security.keystore.get_key", return_value="fake-key"),
+        ):
+            with pytest.raises(httpx.HTTPStatusError):
+                generate_with_fallback("user prompt", "system prompt")
+            assert call_count == 1  # only gemini tried, error propagated
+
+    def test_gemini_tried_before_groq(self):
+        """CATALOGUE must list gemini before groq (server-side ordering)."""
+        from providers.openai_compat import CATALOGUE
+
+        names = [entry[0] for entry in CATALOGUE]
+        assert names.index("gemini") < names.index("groq")
