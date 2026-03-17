@@ -34,4 +34,4 @@ class GhosttySerializer(ThemeSerializer):
         return "\n".join(lines) + "\n"
 
     def file_extension(self) -> str:
-        return ".ghostty"
+        return ""  # Ghostty themes have no file extension (matches cli/main.py install logic)

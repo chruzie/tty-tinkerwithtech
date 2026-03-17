@@ -10,25 +10,25 @@ class LLMError(Exception):
 class LLMClient:
     """Thin wrapper that delegates generation to a provider object."""
 
-    def generate(self, prompt: dict[str, str], provider: object) -> str:
-        """Call the provider and return the raw theme string.
+    def generate(self, prompt: dict[str, str], provider: object) -> tuple[str, int]:
+        """Call the provider and return (raw_theme_string, tokens_used).
 
         Args:
             prompt: dict with "system" and "user" keys.
-            provider: Any provider object with a generate(prompt) -> str method.
+            provider: Any provider with generate(prompt) -> (str, int).
 
         Returns:
-            The raw LLM output string (not yet validated).
+            Tuple of (stripped LLM output, total tokens used).
 
         Raises:
             LLMError: if the provider raises or returns an empty string.
         """
         try:
-            result: str = provider.generate(prompt)  # type: ignore[union-attr]
+            result, tokens = provider.generate(prompt)  # type: ignore[union-attr]
         except Exception as exc:
             raise LLMError(f"Provider error: {exc}") from exc
 
         if not result or not result.strip():
             raise LLMError("Provider returned an empty response")
 
-        return result.strip()
+        return result.strip(), tokens

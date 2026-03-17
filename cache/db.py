@@ -17,28 +17,36 @@ class ThemeRepository:
     def __init__(self, db_path: Path = _DEFAULT_DB_PATH) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def close(self) -> None:
+        """Close the underlying SQLite connection."""
+        self._conn.close()
+
+    def __del__(self) -> None:
+        try:
+            self._conn.close()
+        except Exception:  # noqa: BLE001, S110
+            pass
 
     def init_db(self) -> None:
         """Create all tables and indexes (idempotent)."""
-        with self._connect() as conn:
-            conn.executescript("""
+        with self._conn:
+            self._conn.executescript("""
                 CREATE TABLE IF NOT EXISTS themes (
-                    id          INTEGER PRIMARY KEY,
-                    query_hash  TEXT NOT NULL,
-                    query_raw   TEXT,
-                    input_type  TEXT NOT NULL,
-                    name        TEXT,
-                    theme_data  TEXT NOT NULL,
-                    embedding   TEXT,
-                    source      TEXT DEFAULT 'ai',
-                    provider    TEXT,
-                    cost_usd    REAL DEFAULT 0.0,
-                    created_at  TEXT DEFAULT (datetime('now'))
+                    id             INTEGER PRIMARY KEY,
+                    query_hash     TEXT NOT NULL UNIQUE,
+                    query_raw      TEXT,
+                    input_type     TEXT NOT NULL,
+                    name           TEXT,
+                    theme_data     TEXT NOT NULL,
+                    embedding      TEXT,
+                    source         TEXT DEFAULT 'ai',
+                    provider       TEXT,
+                    cost_usd       REAL DEFAULT 0.0,
+                    download_count INTEGER DEFAULT 0,
+                    created_at     TEXT DEFAULT (datetime('now'))
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_themes_query_hash
@@ -49,7 +57,8 @@ class ThemeRepository:
                     date      TEXT NOT NULL,
                     provider  TEXT NOT NULL,
                     calls     INTEGER DEFAULT 0,
-                    cost_usd  REAL DEFAULT 0.0
+                    cost_usd  REAL DEFAULT 0.0,
+                    UNIQUE(date, provider)
                 );
 
                 CREATE TABLE IF NOT EXISTS audit_log (
@@ -65,9 +74,11 @@ class ThemeRepository:
                 );
 
                 CREATE TABLE IF NOT EXISTS rate_limits (
-                    ip_hash     TEXT PRIMARY KEY,
-                    tokens      REAL NOT NULL DEFAULT 10.0,
-                    last_refill TEXT NOT NULL DEFAULT (datetime('now'))
+                    ip_hash           TEXT PRIMARY KEY,
+                    daily_count       INTEGER NOT NULL DEFAULT 0,
+                    day               TEXT NOT NULL DEFAULT '',
+                    burst_timestamps  TEXT NOT NULL DEFAULT '[]',
+                    burst_offense_count INTEGER NOT NULL DEFAULT 0
                 );
             """)
 
@@ -85,10 +96,10 @@ class ThemeRepository:
     ) -> int:
         """Insert a theme row; returns new row id."""
         embedding_json = json.dumps(embedding) if embedding is not None else None
-        with self._connect() as conn:
-            cur = conn.execute(
+        with self._conn:
+            cur = self._conn.execute(
                 """
-                INSERT INTO themes
+                INSERT OR IGNORE INTO themes
                     (query_hash, query_raw, input_type, name, theme_data,
                      embedding, source, provider, cost_usd)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -100,35 +111,31 @@ class ThemeRepository:
 
     def get_by_hash(self, query_hash: str) -> dict[str, Any] | None:
         """Return the most recent theme matching query_hash, or None."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM themes WHERE query_hash = ? ORDER BY id DESC LIMIT 1",
-                (query_hash,),
-            ).fetchone()
+        row = self._conn.execute(
+            "SELECT * FROM themes WHERE query_hash = ? ORDER BY id DESC LIMIT 1",
+            (query_hash,),
+        ).fetchone()
         return dict(row) if row else None
 
     def get_by_id(self, theme_id: int) -> dict[str, Any] | None:
         """Return a theme row by primary key."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM themes WHERE id = ?", (theme_id,)
-            ).fetchone()
+        row = self._conn.execute(
+            "SELECT * FROM themes WHERE id = ?", (theme_id,)
+        ).fetchone()
         return dict(row) if row else None
 
     def list_themes(self, limit: int = 100) -> list[dict[str, Any]]:
         """Return recent themes (most recent first)."""
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM themes ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
+        rows = self._conn.execute(
+            "SELECT * FROM themes ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
         return [dict(r) for r in rows]
 
     def get_all_embeddings(self) -> list[tuple[int, list[float]]]:
         """Return (id, vector) for all themes that have an embedding."""
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, embedding FROM themes WHERE embedding IS NOT NULL"
-            ).fetchall()
+        rows = self._conn.execute(
+            "SELECT id, embedding FROM themes WHERE embedding IS NOT NULL"
+        ).fetchall()
         result = []
         for row in rows:
             vector: list[float] = json.loads(row["embedding"])
@@ -136,24 +143,18 @@ class ThemeRepository:
         return result
 
     def log_cost(self, provider: str, cost_usd: float) -> None:
-        """Upsert into cost_log for today."""
+        """Upsert into cost_log for today (atomic, no TOCTOU race)."""
         today = date.today().isoformat()
-        with self._connect() as conn:
-            existing = conn.execute(
-                "SELECT id FROM cost_log WHERE date = ? AND provider = ?",
-                (today, provider),
-            ).fetchone()
-            if existing:
-                conn.execute(
-                    "UPDATE cost_log SET calls = calls + 1, cost_usd = cost_usd + ? "
-                    "WHERE date = ? AND provider = ?",
-                    (cost_usd, today, provider),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO cost_log (date, provider, calls, cost_usd) VALUES (?, ?, 1, ?)",
-                    (today, provider, cost_usd),
-                )
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO cost_log (date, provider, calls, cost_usd)
+                VALUES (?, ?, 1, ?)
+                ON CONFLICT(date, provider)
+                DO UPDATE SET calls = calls + 1, cost_usd = cost_usd + excluded.cost_usd
+                """,
+                (today, provider, cost_usd),
+            )
 
     def log_audit(
         self,
@@ -166,8 +167,8 @@ class ThemeRepository:
         status: str,
     ) -> None:
         """Append an audit log row."""
-        with self._connect() as conn:
-            conn.execute(
+        with self._conn:
+            self._conn.execute(
                 """
                 INSERT INTO audit_log
                     (ip_hash, query_hash, input_type, provider, tier_used, cost_usd, status)
@@ -176,12 +177,71 @@ class ThemeRepository:
                 (ip_hash, query_hash, input_type, provider, tier_used, cost_usd, status),
             )
 
+    def get_rate_limit(self, ip_hash: str) -> dict[str, Any] | None:
+        """Return rate limit state for ip_hash, or None if not found."""
+        row = self._conn.execute(
+            "SELECT * FROM rate_limits WHERE ip_hash = ?", (ip_hash,)
+        ).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        # If stored day != today, treat count as 0
+        today = date.today().isoformat()
+        if result.get("day") != today:
+            result["daily_count"] = 0
+        return result
+
+    def upsert_rate_limit(
+        self,
+        ip_hash: str,
+        daily_count: int,
+        day: str,
+        burst_timestamps: list[str],
+        burst_offense_count: int,
+    ) -> None:
+        """Insert or replace rate limit state for ip_hash."""
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO rate_limits
+                    (ip_hash, daily_count, day, burst_timestamps, burst_offense_count)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(ip_hash) DO UPDATE SET
+                    daily_count = excluded.daily_count,
+                    day = excluded.day,
+                    burst_timestamps = excluded.burst_timestamps,
+                    burst_offense_count = excluded.burst_offense_count
+                """,
+                (ip_hash, daily_count, day, json.dumps(burst_timestamps), burst_offense_count),
+            )
+
+    def increment_download_count(self, slug: str) -> int:
+        """Increment download_count for the theme matching slug; return new count.
+
+        Matches slug by comparing make_slug(name) == slug.
+        Returns 0 if no matching theme found.
+        """
+        from generator.slug import make_slug
+
+        rows = self._conn.execute(
+            "SELECT id, name, download_count FROM themes WHERE name IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            if make_slug(row["name"]) == slug:
+                new_count = (row["download_count"] or 0) + 1
+                with self._conn:
+                    self._conn.execute(
+                        "UPDATE themes SET download_count = ? WHERE id = ?",
+                        (new_count, row["id"]),
+                    )
+                return new_count
+        return 0
+
     def get_daily_spend(self) -> float:
         """Return total cost_usd spent today across all providers."""
         today = date.today().isoformat()
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT COALESCE(SUM(cost_usd), 0.0) AS total FROM cost_log WHERE date = ?",
-                (today,),
-            ).fetchone()
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0.0) AS total FROM cost_log WHERE date = ?",
+            (today,),
+        ).fetchone()
         return float(row["total"])

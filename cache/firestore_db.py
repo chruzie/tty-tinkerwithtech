@@ -164,3 +164,42 @@ class FirestoreThemeRepository:
             "status": status,
             "created_at": firestore.SERVER_TIMESTAMP,
         })
+
+    def get_rate_limit(self, ip_hash: str) -> dict | None:
+        from datetime import date
+        doc = self._db().collection("rate_limits").document(ip_hash).get()
+        if not doc.exists:
+            return None
+        result = doc.to_dict()
+        today = date.today().isoformat()
+        if result.get("day") != today:
+            result["daily_count"] = 0
+        return result
+
+    def upsert_rate_limit(
+        self,
+        ip_hash: str,
+        daily_count: int,
+        day: str,
+        burst_timestamps: list[str],
+        burst_offense_count: int,
+    ) -> None:
+        import json
+        self._db().collection("rate_limits").document(ip_hash).set({
+            "ip_hash": ip_hash,
+            "daily_count": daily_count,
+            "day": day,
+            "burst_timestamps": json.dumps(burst_timestamps),
+            "burst_offense_count": burst_offense_count,
+        })
+
+    def increment_download_count(self, slug: str) -> int:
+        from generator.slug import make_slug
+        docs = self._db().collection("themes").stream()
+        for doc in docs:
+            data = doc.to_dict()
+            if data.get("name") and make_slug(data["name"]) == slug:
+                new_count = (data.get("download_count") or 0) + 1
+                doc.reference.update({"download_count": new_count})
+                return new_count
+        return 0
