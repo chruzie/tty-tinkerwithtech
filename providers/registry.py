@@ -11,18 +11,26 @@ All other errors propagate immediately.
 
 from __future__ import annotations
 
+import os
+
 import httpx
 
 from providers.openai_compat import CATALOGUE, OpenAICompatProvider
-from security.keystore import get_key
+
+_KEY_ENV: dict[str, str] = {
+    "gemini": "GEMINI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+}
 
 
 def _build_chain(preferred: str | None = None) -> list[OpenAICompatProvider]:
-    """Build the ordered provider list, injecting stored API keys."""
+    """Build the ordered provider list, injecting API keys from env vars."""
     providers: list[OpenAICompatProvider] = []
 
     for name, base_url, model, key_name, cost, is_local in CATALOGUE:
-        api_key = get_key(key_name) if key_name else None
+        api_key = os.environ.get(_KEY_ENV[key_name]) if key_name and key_name in _KEY_ENV else None
         p = OpenAICompatProvider(
             name=name,
             base_url=base_url,
@@ -60,30 +68,40 @@ def resolve_provider(preferred: str | None = None) -> OpenAICompatProvider:
 
 
 def generate_with_fallback(
-    prompt: dict[str, str],
+    prompt: str,
+    system: str,
     preferred: str | None = None,
 ) -> tuple[str, str]:
     """Generate a theme string with automatic 429 fallback across providers.
 
+    Tries gemini first (server-side default), then groq on HTTP 429.
+    Non-429 errors propagate immediately.
+
+    Args:
+        prompt: User-turn text (already wrapped by build_user_prompt).
+        system: System prompt string.
+        preferred: Optional provider name to try first.
+
     Returns:
-        (theme_str, provider_name) — the raw LLM output and which provider was used.
+        Tuple of (raw LLM output string, provider name used).
 
     Raises:
         RuntimeError: if all available providers are exhausted (throttled or failed).
     """
+    prompt_dict = {"system": system, "user": prompt}
     chain = _build_chain(preferred)
     available = [p for p in chain if p.health_check()]
 
     if not available:
         raise RuntimeError(
-            "No LLM provider available. Run `tty-theme config setup` to configure one."
+            "No LLM provider available. Configure GEMINI_API_KEY or GROQ_API_KEY."
         )
 
     errors: list[str] = []
     for provider in available:
         try:
-            result = provider.generate(prompt)
-            return result, provider.name
+            content, _tokens = provider.generate(prompt_dict)
+            return content, provider.name
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 429:  # noqa: PLR2004
                 errors.append(f"{provider.name}: throttled (429)")
