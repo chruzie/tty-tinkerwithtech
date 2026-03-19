@@ -462,7 +462,7 @@ tty-tinkerwithtech/
 | 1 | Prompt injection protection + input validation | ✓ done |
 | 2 | Provider system — Gemini + Groq, 429 fallback, env-var keys | ✓ done |
 | 3 | Similarity cache — MiniLM embeddings, cosine similarity, tiered lookup | ✓ done |
-| 4 | API — all endpoints, rate limiting, spend cap, download count | ⚠ partial — spend cap non-functional (BUG-1: `log_cost()` never called); iTerm2 download produces Ghostty format (OQ-1 escalated) |
+| 4 | API — all endpoints, rate limiting, spend cap, download count | ⚠ partial — spend cap non-functional (BUG-1: `log_cost()` never called after LLM generation; `DAILY_SPEND_CAP` always reads $0.00). iTerm2 download ✓ fixed (client-side `ghosttyToIterm2()` in `web/index.html`) |
 | 5 | Web UI — Generator page, gallery, theme detail, rate limit UX | ✓ done |
 | 6 | Community gallery — publish, browse, slug system | ✓ done |
 | 7 | Security hardening — bandit clean, SSRF guard, input sanitizer | ✓ done |
