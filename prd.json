@@ -1,345 +1,291 @@
 {
-  "project": "tty-theme",
-  "branchName": "ralph/audit-remediation",
-  "description": "tty-theme — Audit remediation. Fixes for P0/P1 findings from the 2026-03-15 multi-agent security, performance, bug, and UX review. Stories ordered by dependency: security foundations first, then performance, then bugs, then UX.",
-  "userStories": [
-    {
-      "id": "US-001",
-      "title": "Fix SSRF guard: add missing blocklist ranges and IPv6 mapped addresses",
-      "description": "As a security engineer, I need the SSRF guard to block 0.0.0.0/8, 100.64.0.0/10, and IPv4-mapped IPv6 addresses so attackers cannot bypass it with edge-case addresses.",
-      "acceptanceCriteria": [
-        "Add 0.0.0.0/8 and 100.64.0.0/10 to _BLOCKED_NETWORKS in security/ssrf_guard.py",
-        "For each resolved IP, check ipaddress.ip_address(ip).ipv4_mapped and re-validate the embedded IPv4 address if present",
-        "check_url('https://0.0.0.0/') raises ValueError",
-        "check_url('https://[::ffff:127.0.0.1]/') raises ValueError",
-        "check_url('https://100.64.1.1/') raises ValueError",
-        "Existing tests still pass",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 1,
-      "passes": false,
-      "notes": "SEC-C2 from audit. See security/ssrf_guard.py lines 9-18."
-    },
-    {
-      "id": "US-002",
-      "title": "Fix SSRF guard: resolve DNS once and pass resolved IP to httpx (DNS rebinding fix)",
-      "description": "As a security engineer, I need DNS resolution to happen once and the resolved IP to be reused for the HTTP fetch so a DNS rebinding attack cannot bypass the SSRF guard between the check and the request.",
-      "acceptanceCriteria": [
-        "Add a function safe_fetch(url, **kwargs) in security/ssrf_guard.py that: (1) calls check_url(url), (2) resolves the hostname via socket.getaddrinfo, (3) validates the resolved IP, (4) performs the httpx.get with the resolved IP via a custom transport or by substituting the IP in the URL and passing the original host as the Host header",
-        "image/loader.py imports and uses safe_fetch instead of httpx.get for remote image URLs",
-        "A mock test verifies safe_fetch rejects a URL whose DNS resolves to 127.0.0.1",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 2,
-      "passes": false,
-      "notes": "SEC-C1 from audit. DNS TOCTOU between ssrf_guard.py check and loader.py httpx.get."
-    },
-    {
-      "id": "US-003",
-      "title": "Fix path traversal in --install theme name sanitization",
-      "description": "As a user, I need the --install flag to safely handle any theme name so that a malicious name like ../../.bashrc cannot write outside the themes directory.",
-      "acceptanceCriteria": [
-        "In cli/main.py _install_theme(), after building safe_name, validate it with re.match(r'^[a-z0-9][a-z0-9_-]*$', safe_name) and raise ValueError if it does not match",
-        "Names containing '/' or '..' or starting with '-' are rejected with a clear error message",
-        "tty-theme generate --prompt x --install --name '../../evil' prints an error and exits non-zero",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 3,
-      "passes": false,
-      "notes": "SEC-H6 from audit. cli/main.py lines 36-38."
-    },
-    {
-      "id": "US-004",
-      "title": "Restrict /metrics endpoint to internal access only",
-      "description": "As a platform engineer, I need the /metrics endpoint to be inaccessible to public internet clients so that internal observability data is not exposed.",
-      "acceptanceCriteria": [
-        "Add a MetricsAuthMiddleware or a dependency in api/main.py that checks for a METRICS_TOKEN env var",
-        "If METRICS_TOKEN is set, /metrics requires Authorization: Bearer <token> header and returns 403 if missing or wrong",
-        "If METRICS_TOKEN is not set (local dev), /metrics is accessible without auth",
-        ".env.example documents METRICS_TOKEN= as an optional field",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 4,
-      "passes": false,
-      "notes": "SEC-H4 from audit. api/main.py lines 74-77."
-    },
-    {
-      "id": "US-005",
-      "title": "Fix X-Forwarded-For spoofing in rate limiter",
-      "description": "As a platform engineer, I need the rate limiter to only trust X-Forwarded-For when behind a known proxy so that clients cannot bypass rate limits by spoofing the header.",
-      "acceptanceCriteria": [
-        "In api/middleware.py _ip_hash(), add a TRUSTED_PROXY_COUNT env var (default 0, integer)",
-        "If TRUSTED_PROXY_COUNT == 0, use request.client.host directly, ignoring X-Forwarded-For",
-        "If TRUSTED_PROXY_COUNT > 0, parse the Nth-from-right value from X-Forwarded-For (the trusted hop)",
-        ".env.example documents TRUSTED_PROXY_COUNT=1 for Cloud Run behind Google Front End",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 5,
-      "passes": false,
-      "notes": "SEC-H1 from audit. api/middleware.py lines 39-43."
-    },
-    {
-      "id": "US-006",
-      "title": "Bound rate limiter memory with TTL-based eviction",
-      "description": "As a platform engineer, I need the in-process rate limit dictionaries to evict stale entries so that an attacker cannot cause OOM by rotating spoofed IPs.",
-      "acceptanceCriteria": [
-        "Replace _minute_buckets and _hour_buckets defaultdicts in api/middleware.py with cachetools.TTLCache(maxsize=10000, ttl=3600)",
-        "Add cachetools to pyproject.toml dependencies",
-        "After eviction, a previously seen IP gets a fresh bucket (correct behavior)",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 6,
-      "passes": false,
-      "notes": "SEC-H3 and PERF-M7 from audit. api/middleware.py lines 34-35."
-    },
-    {
-      "id": "US-007",
-      "title": "Fix sanitize_prompt to raise ValueError on empty result and strip control characters",
-      "description": "As a developer, I need sanitize_prompt to fulfil its documented contract (raise ValueError on empty) and strip ASCII control characters to prevent log injection.",
-      "acceptanceCriteria": [
-        "At the end of sanitize_prompt() in security/input_sanitizer.py, add: if not normalized: raise ValueError('Prompt is empty after sanitization')",
-        "Strip all characters with Unicode category Cc and Cf (except space/tab/newline) using unicodedata.category",
-        "sanitize_prompt('') raises ValueError",
-        "sanitize_prompt('\\x00\\x01hello') returns 'hello'",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 7,
-      "passes": false,
-      "notes": "SEC-M4 and SEC-M5 from audit."
-    },
-    {
-      "id": "US-008",
-      "title": "Validate secret name before Secret Manager path construction",
-      "description": "As a security engineer, I need get_secret() to validate the secret name against an allowlist so that path injection into the Secret Manager resource path is impossible.",
-      "acceptanceCriteria": [
-        "In security/secrets.py get_secret(), before constructing the resource path, validate name matches r'^[A-Z_][A-Z0-9_]*$'",
-        "Raise ValueError('Invalid secret name: {name}') if it does not match",
-        "get_secret('../../bad') raises ValueError",
-        "get_secret('GEMINI_API_KEY') works normally",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 8,
-      "passes": false,
-      "notes": "SEC-M6 from audit. security/secrets.py line 47."
-    },
-    {
-      "id": "US-009",
-      "title": "Fix sync blocking in async FastAPI generate endpoint",
-      "description": "As a platform engineer, I need the /v1/generate endpoint to not block the asyncio event loop so that the API can handle multiple concurrent requests.",
-      "acceptanceCriteria": [
-        "Change async def generate(...) to def generate(...) in api/main.py so FastAPI delegates it to a thread pool",
-        "Remove any await calls that are no longer needed after this change",
-        "The endpoint still returns the correct GenerateResponse",
-        "Typecheck passes"
-      ],
-      "priority": 9,
-      "passes": false,
-      "notes": "PERF-H1 from audit. api/main.py lines 114-158. Simplest fix: sync def, FastAPI auto-threads."
-    },
-    {
-      "id": "US-010",
-      "title": "Add HTTP connection reuse to OpenAICompatProvider",
-      "description": "As a developer, I need each OpenAICompatProvider instance to reuse an httpx.Client so that TCP+TLS connection overhead is not paid on every LLM call.",
-      "acceptanceCriteria": [
-        "In providers/openai_compat.py OpenAICompatProvider.__init__(), create self._client = httpx.Client(timeout=60.0) and store it",
-        "Replace the standalone httpx.post() call in generate() with self._client.post()",
-        "Replace the standalone httpx.get() call in health_check() with self._client.get() with timeout=2.0",
-        "Add __del__ or a close() method that calls self._client.close()",
-        "Existing provider tests still pass",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 10,
-      "passes": false,
-      "notes": "PERF-H4 from audit. providers/openai_compat.py lines 57, 65-80."
-    },
-    {
-      "id": "US-011",
-      "title": "Pre-load MiniLM embedding model at FastAPI startup",
-      "description": "As a platform engineer, I need the sentence-transformers model to be loaded during app startup rather than on the first request so that cold start latency does not affect real users.",
-      "acceptanceCriteria": [
-        "In api/main.py lifespan startup block, call cache.embeddings._get_model() (or equivalent) to force model load",
-        "The model is stored on app.state so it is reused across requests",
-        "If sentence-transformers is not installed, startup logs a warning but does not fail",
-        "Typecheck passes"
-      ],
-      "priority": 11,
-      "passes": false,
-      "notes": "PERF-H3 from audit. cache/embeddings.py lines 11-17."
-    },
-    {
-      "id": "US-012",
-      "title": "Cache provider health check results with 30-second TTL",
-      "description": "As a developer, I need provider health checks to be cached for 30 seconds so that repeated calls do not add 6 seconds of serial blocking when local providers are offline.",
-      "acceptanceCriteria": [
-        "In providers/openai_compat.py, add a _health_cache: dict[str, tuple[bool, float]] at module level",
-        "health_check() returns cached result if last check was within 30 seconds (use time.monotonic())",
-        "Otherwise performs the actual check and caches the result",
-        "A test verifies the second health_check() call within 30s does not call httpx.get again",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 12,
-      "passes": false,
-      "notes": "PERF-M2 from audit. providers/registry.py lines 49-50, openai_compat.py line 57."
-    },
-    {
-      "id": "US-013",
-      "title": "Fix cache hits returning wrong serialization format (BUG-01)",
-      "description": "As a user, I need --target iterm2 to always return iTerm2 format even when served from cache so that I get the format I asked for regardless of cache tier.",
-      "acceptanceCriteria": [
-        "In modes/prompt_mode.py, on the tier-1 cache hit path (line ~61), re-serialize cached['theme_data'] through the serializer: parse with validator, serialize with serializer.serialize()",
-        "On the tier-2 similarity hit path (line ~73), apply the same re-serialization",
-        "A test verifies: seed cache with Ghostty format, call generate_from_prompt with target='iterm2', assert output contains XML plist markers",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 13,
-      "passes": false,
-      "notes": "BUG-01 from audit. Critical. modes/prompt_mode.py lines 61 and 73."
-    },
-    {
-      "id": "US-014",
-      "title": "Fix wrong prompt builder used for image refinement (BUG-06)",
-      "description": "As a user, I need image refinement to use the correct LLM system prompt so that the palette-specific refine prompt is used instead of the text-inspiration prompt.",
-      "acceptanceCriteria": [
-        "In modes/image_mode.py line ~73, replace build_prompt(f'Refine this extracted palette:\\n{palette_str}') with build_refine_prompt(colors, user_description='') where colors is the extracted palette list",
-        "Import build_refine_prompt from generator.prompt",
-        "A test verifies the refine path calls generate with a prompt dict whose system key contains the refine system prompt text",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 14,
-      "passes": false,
-      "notes": "BUG-06 from audit. modes/image_mode.py line 73."
-    },
-    {
-      "id": "US-015",
-      "title": "Fix image loader: tighten magic bytes and handle UnidentifiedImageError (BUG-03, BUG-14)",
-      "description": "As a developer, I need the image loader to correctly validate WebP magic bytes and catch PIL's UnidentifiedImageError as ValueError so the API never leaks unhandled exceptions.",
-      "acceptanceCriteria": [
-        "In image/loader.py, change the RIFF entry to validate bytes 8-11 == b'WEBP': check first 12 bytes, require [0:4] == b'RIFF' and [8:12] == b'WEBP'",
-        "Remove the b'\\x00\\x00\\x00' catch-all entry from _ALLOWED_MAGIC",
-        "Wrap the PIL Image.open() call in a try/except that catches PIL.UnidentifiedImageError and re-raises as ValueError('Unsupported or corrupt image format')",
-        "A test verifies a WAV file (RIFF container) is rejected",
-        "A test verifies an unknown binary file starting with null bytes is rejected",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 15,
-      "passes": false,
-      "notes": "BUG-03 and BUG-14 from audit."
-    },
-    {
-      "id": "US-016",
-      "title": "Fix log_cost TOCTOU race with SQLite UPSERT (BUG-09)",
-      "description": "As a developer, I need log_cost to use an atomic UPSERT so concurrent requests cannot double-count costs.",
-      "acceptanceCriteria": [
-        "Add a UNIQUE(date, provider) constraint to the cost_log table in cache/db.py init_db()",
-        "Replace the SELECT + conditional INSERT/UPDATE in log_cost() with a single INSERT INTO cost_log(date, provider, calls, cost_usd) VALUES(?,?,1,?) ON CONFLICT(date, provider) DO UPDATE SET calls = calls + 1, cost_usd = cost_usd + excluded.cost_usd",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 16,
-      "passes": false,
-      "notes": "BUG-09 from audit. cache/db.py lines 141-156."
-    },
-    {
-      "id": "US-017",
-      "title": "Fix tier_used always hardcoded in API response (BUG-08)",
-      "description": "As an API consumer, I need the tier_used field in GenerateResponse to reflect the actual cache tier used so I can understand whether a result was cached or generated.",
-      "acceptanceCriteria": [
-        "Modify generate_from_prompt() in modes/prompt_mode.py to return a tuple (theme_str, tier: int) where tier=1 for hash hit, tier=2 for similarity hit, tier=3 for LLM generation",
-        "Modify generate_from_image() in modes/image_mode.py to return (theme_str, tier: int) where tier=1 for pHash cache hit, tier=3 for fresh extraction",
-        "Update api/main.py /v1/generate to unpack the tuple and set tier_used correctly",
-        "Update cli/main.py to handle the new return value (unpack tuple, use theme_str only)",
-        "Tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 17,
-      "passes": false,
-      "notes": "BUG-08 from audit. api/main.py lines 135 and 145."
-    },
-    {
-      "id": "US-018",
-      "title": "Add progress feedback to CLI generate command (CLI-3)",
-      "description": "As a user, I want to see progress messages during theme generation so I know the tool is working and not hung during LLM calls.",
-      "acceptanceCriteria": [
-        "In cli/main.py generate(), before calling generate_from_prompt or generate_from_image, print 'searching cache...' to stderr",
-        "After provider resolution, print '  generating via <provider.name>...' to stderr (requires provider name to be accessible at that level, or print it from inside the mode functions using a callback/echo param)",
-        "All status messages go to stderr (typer.echo(..., err=True)) so they do not contaminate piped output",
-        "Typecheck passes"
-      ],
-      "priority": 18,
-      "passes": false,
-      "notes": "CLI-3 from UX audit. cli/main.py lines 63-69."
-    },
-    {
-      "id": "US-019",
-      "title": "Improve CLI error messages with actionable guidance (CLI-1, CLI-2)",
-      "description": "As a user, I want error messages to tell me what went wrong and what to do next so I am not left with a cryptic Python exception string.",
-      "acceptanceCriteria": [
-        "In cli/main.py generate(), when neither --prompt nor --image is provided, print a multi-line help message: 'Error: at least one input is required.' followed by two usage examples and 'Run tty-theme generate --help for all options.'",
-        "Catch RuntimeError from resolve_provider separately and print: 'No LLM provider available. Run tty-theme config setup to add an API key, or start Ollama with: ollama serve'",
-        "Typecheck passes"
-      ],
-      "priority": 19,
-      "passes": false,
-      "notes": "CLI-1 and CLI-2 from UX audit."
-    },
-    {
-      "id": "US-020",
-      "title": "Add --install overwrite guard and post-install activation hint (CLI-4)",
-      "description": "As a user, I want to be warned before overwriting an existing theme and told how to activate it in my terminal config after installing.",
-      "acceptanceCriteria": [
-        "In cli/main.py _install_theme(), check if dest already exists before writing",
-        "If it exists, print a warning 'Theme <name> already exists at <path>. Use --force to overwrite.' and return None without writing",
-        "Add --force / -f bool flag to the generate command; if --force is passed, write without checking",
-        "After a successful Ghostty install, print to stderr: 'To activate: add `theme = <name>` to ~/.config/ghostty/config'",
-        "After a successful iTerm2 install, print to stderr: 'To activate: open iTerm2 → Preferences → Profiles → Colors → Color Presets → <name>'",
-        "Typecheck passes"
-      ],
-      "priority": 20,
-      "passes": false,
-      "notes": "CLI-4 from UX audit. cli/main.py lines 77-82."
-    },
-    {
-      "id": "US-021",
-      "title": "Move sentence-transformers to optional dependency group",
-      "description": "As a developer, I need sentence-transformers (and its 2GB PyTorch dep) to be optional so users who don't need tier-2 similarity caching don't pay the install cost.",
-      "acceptanceCriteria": [
-        "Move sentence-transformers from [project.dependencies] to [project.optional-dependencies] under key 'embeddings' in pyproject.toml",
-        "In cache/embeddings.py, wrap the import in try/except ImportError and raise a clear RuntimeError('Install tty-theme[embeddings] to enable similarity search') if not available",
-        "In modes/prompt_mode.py, the ImportError guard for sentence-transformers already exists — verify it correctly skips tier-2 and falls through to tier-3",
-        "uv sync installs without sentence-transformers by default",
-        "uv sync --extra embeddings installs it",
-        "Typecheck passes"
-      ],
-      "priority": 21,
-      "passes": false,
-      "notes": "PERF-L2 from audit. pyproject.toml line 25."
-    },
-    {
-      "id": "US-022",
-      "title": "Remove dead tomli dependency and fix GhosttySerializer file_extension",
-      "description": "As a developer, I need dead code removed and the Ghostty serializer's file_extension to match the actual install path so future use of the method doesn't introduce a regression.",
-      "acceptanceCriteria": [
-        "Remove the tomli conditional dependency from pyproject.toml (unreachable since requires-python>=3.11)",
-        "Change GhosttySerializer.file_extension() in generator/serializers/ghostty.py to return '' (empty string, matching the install logic in cli/main.py)",
-        "uv sync completes without error",
-        "Typecheck passes"
-      ],
-      "priority": 22,
-      "passes": false,
-      "notes": "BUG-17 and BUG-16 from audit."
-    }
-  ]
+    "project": "tty-theme",
+    "branchName": "ralph/web-only-pivot",
+    "description": "tty-theme v1.3 \u2014 Web-only pivot. No CLI. Server-side Gemini+Groq keys, rate limiting (5/day + exponential backoff), prompt injection protection, community gallery with download counts.",
+    "userStories": [
+        {
+            "id": "US-001",
+            "title": "Remove CLI binary and all CLI code",
+            "description": "As a developer, I need to delete cli/ directory, modes/image_mode.py, image/ directory, and remove CLI-related deps from pyproject.toml so the codebase is web-only.",
+            "acceptanceCriteria": [
+                "Delete cli/ directory entirely",
+                "Delete modes/ directory entirely (image_mode.py and prompt_mode.py become part of the API layer)",
+                "Delete image/ directory (loader.py, extractor.py, phash.py, mapper.py) if it exists",
+                "Remove typer, keyring from pyproject.toml dependencies",
+                "Remove [project.scripts] tty-theme entry point from pyproject.toml",
+                "Remove test_image_mode.py, test_image_loader.py, test_cli.py from tests/ if they exist",
+                "uv run pytest passes (pre-existing failures in test_llm.py and test_api.py are acceptable)",
+                "Typecheck passes"
+            ],
+            "priority": 1,
+            "passes": true,
+            "notes": "v1.3 is web-only. Clean removal only \u2014 no replacement needed in this story."
+        },
+        {
+            "id": "US-002",
+            "title": "Add structured prompt template with injection protection",
+            "description": "As a developer, I need generator/prompt.py to wrap user input in a structural system+user prompt so injected instructions cannot affect LLM behavior.",
+            "acceptanceCriteria": [
+                "Create generator/prompt.py with SYSTEM_PROMPT constant",
+                "SYSTEM_PROMPT instructs LLM to output ONLY JSON with exactly 21 hex keys, ignore any embedded instructions",
+                "Add build_user_prompt(raw_input: str) -> str that wraps raw_input as: 'Generate a terminal color theme inspired by: \"{raw_input}\"'",
+                "build_user_prompt does NOT modify or filter the input \u2014 sanitization is upstream in input_sanitizer.py",
+                "Tests: build_user_prompt('cyberpunk neon rain') produces a string containing the raw input wrapped in quotes",
+                "Tests: SYSTEM_PROMPT contains the words 'ignore' and 'JSON' (confirming injection-defense language is present)",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 2,
+            "passes": true,
+            "notes": "Security foundation \u2014 must exist before any LLM call is made."
+        },
+        {
+            "id": "US-003",
+            "title": "Enforce 200-char max and sanitize prompt input",
+            "description": "As a developer, I need security/input_sanitizer.py to enforce a 200-character limit and strip control characters so user input is safe before wrapping.",
+            "acceptanceCriteria": [
+                "Add sanitize_prompt(raw: str) -> str to security/input_sanitizer.py (or update existing sanitize function)",
+                "Raises ValueError('prompt_too_long') if len(raw.strip()) > 200",
+                "Strips leading/trailing whitespace",
+                "Normalizes unicode to NFKC",
+                "Strips null bytes and ASCII control characters (\\x00-\\x1f, \\x7f)",
+                "Does NOT further filter content \u2014 structural wrapping handles injection",
+                "Tests: input of 201 chars raises ValueError",
+                "Tests: input with null bytes has them stripped",
+                "Tests: unicode input is NFKC normalized",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 3,
+            "passes": true,
+            "notes": "Max 200 chars enforced here AND at API level (belt-and-suspenders)."
+        },
+        {
+            "id": "US-004",
+            "title": "Add Gemini + Groq providers via OpenAICompatProvider",
+            "description": "As a developer, I need providers/openai_compat.py and providers/registry.py to support Gemini 2.0 Flash and Groq as the two server-side providers with 429 auto-fallback.",
+            "acceptanceCriteria": [
+                "providers/openai_compat.py has OpenAICompatProvider class with CATALOGUE dict containing 'gemini' and 'groq' entries",
+                "CATALOGUE['gemini']: base_url='https://generativelanguage.googleapis.com/v1beta/openai', model='gemini-2.0-flash', key_env='GEMINI_API_KEY'",
+                "CATALOGUE['groq']: base_url='https://api.groq.com/openai', model='llama-3.3-70b-versatile', key_env='GROQ_API_KEY'",
+                "providers/registry.py has generate_with_fallback(prompt: str, system: str) -> str that tries gemini first, then groq on HTTP 429",
+                "Non-429 errors propagate immediately",
+                "Tests: mock HTTP 429 from gemini \u2192 asserts groq was called",
+                "Tests: mock non-429 error from gemini \u2192 asserts error propagates, groq not called",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 4,
+            "passes": true,
+            "notes": "Server-side keys only. GEMINI_API_KEY and GROQ_API_KEY read from env."
+        },
+        {
+            "id": "US-005",
+            "title": "Add slug generation utility",
+            "description": "As a developer, I need a shared make_slug() function for consistent URL-safe theme slugs.",
+            "acceptanceCriteria": [
+                "Add make_slug(name: str) -> str in generator/slug.py",
+                "Lowercases, replaces spaces/underscores with hyphens, strips non-alphanumeric chars except hyphens",
+                "Collapses consecutive hyphens, strips leading/trailing hyphens",
+                "make_slug('Tokyo Midnight!') == 'tokyo-midnight'",
+                "make_slug('  --neon rain-- ') == 'neon-rain'",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 5,
+            "passes": true,
+            "notes": "Used by publish and gallery API endpoints."
+        },
+        {
+            "id": "US-006",
+            "title": "Add per-IP rate limiting (5/day + burst cooldown) to API middleware",
+            "description": "As a developer, I need api/middleware.py to enforce 5 LLM generations per IP per day and exponential backoff on bursting, stored in the theme repository.",
+            "acceptanceCriteria": [
+                "Add check_rate_limit(ip_hash: str, repo) -> None to api/middleware.py or a new api/rate_limit.py",
+                "Raises RateLimitExceeded(reset_at: datetime) if daily count >= DAILY_GENERATION_LIMIT (env, default 5)",
+                "Raises BurstCooldown(cooldown_seconds: int) if IP made > 3 requests within BURST_WINDOW_SECONDS (env, default 60)",
+                "Burst cooldowns: 1st=10s, 2nd=30s, 3rd+=120s",
+                "IP stored as SHA256(ip)[:16] \u2014 never raw IP",
+                "increment_rate_limit(ip_hash: str, repo) -> None increments count and records request timestamp",
+                "Rate limit state stored in SQLite (dev) / Firestore (prod) via a rate_limits table/collection",
+                "Cache hits (exact/similarity) do NOT call increment_rate_limit",
+                "Tests: 5 calls succeed, 6th raises RateLimitExceeded",
+                "Tests: 4 calls within 60s triggers BurstCooldown on 4th",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 6,
+            "passes": true,
+            "notes": "Rate limits only apply to actual LLM calls, not cache hits."
+        },
+        {
+            "id": "US-007",
+            "title": "Add rate_limits table to SQLite repository",
+            "description": "As a developer, I need cache/db.py to store and query per-IP rate limit state so the middleware can persist limits across requests.",
+            "acceptanceCriteria": [
+                "Add rate_limits table: ip_hash TEXT PK, daily_count INT, day TEXT (YYYY-MM-DD), burst_timestamps TEXT (JSON array of ISO strings), burst_offense_count INT",
+                "Add get_rate_limit(ip_hash) -> dict | None to ThemeRepository",
+                "Add upsert_rate_limit(ip_hash, daily_count, day, burst_timestamps, burst_offense_count) -> None",
+                "day column resets count logic: if stored day != today, treat count as 0",
+                "Tests: upsert then get returns correct values",
+                "Tests: day mismatch returns count=0",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 7,
+            "passes": true,
+            "notes": "Must exist before US-006 middleware can store state."
+        },
+        {
+            "id": "US-008",
+            "title": "Add POST /v1/generate endpoint",
+            "description": "As a web user, I want to POST a prompt and receive a generated theme with full rate limiting and injection protection applied.",
+            "acceptanceCriteria": [
+                "Add POST /v1/generate to api/main.py",
+                "Request body: { prompt: str }",
+                "Returns 400 { error: 'prompt_too_long', max_length: 200 } if prompt > 200 chars",
+                "Calls sanitize_prompt() then build_user_prompt() then generate_with_fallback()",
+                "Checks rate limit before LLM call; returns 429 { error: 'rate_limit_exceeded', reset_at, cooldown_seconds } if exceeded",
+                "Increments rate limit counter after successful LLM call only",
+                "Returns 200 { theme_data, slug, cached, provider }",
+                "theme_data is Ghostty key=value format",
+                "slug is make_slug(prompt[:40])",
+                "cached: true if served from Tier 1 or Tier 2 cache",
+                "Tests: 201-char prompt returns 400",
+                "Tests: 6th request returns 429",
+                "Tests: valid prompt returns 200 with theme_data",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 8,
+            "passes": true,
+            "notes": "Core endpoint. Wires together all previous stories."
+        },
+        {
+            "id": "US-009",
+            "title": "Add GET /v1/themes and GET /v1/themes/:slug endpoints",
+            "description": "As a web gallery user, I want to browse and fetch community themes via the API.",
+            "acceptanceCriteria": [
+                "Add GET /v1/themes to api/main.py: params sort (newest|downloads, default newest), limit (max 100, default 20), offset",
+                "Returns { themes: [{id, slug, name, download_count, created_at, theme_data}], total, offset }",
+                "Add GET /v1/themes/{slug} to api/main.py",
+                "Returns theme object or 404 { error: 'not_found' }",
+                "slug matching uses make_slug(name) == slug",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 9,
+            "passes": true,
+            "notes": "PRD \u00a79."
+        },
+        {
+            "id": "US-010",
+            "title": "Add POST /v1/themes and POST /v1/themes/:slug/download endpoints",
+            "description": "As a web user, I want to publish a theme to the gallery and track download counts.",
+            "acceptanceCriteria": [
+                "Add POST /v1/themes: body { name: str, theme_data: str }",
+                "Validates theme_data with validate_theme() \u2014 returns 422 on failure",
+                "Generates slug with make_slug(name)",
+                "Saves with source='community', download_count=0",
+                "Returns 201 { slug, name, created_at } or 409 if slug exists",
+                "Add POST /v1/themes/{slug}/download: increments download_count by 1",
+                "Returns 200 { download_count: N } or 404 if slug not found",
+                "Add download_count column (INT default 0) to themes table in cache/db.py",
+                "Add increment_download_count(slug) -> int to ThemeRepository",
+                "Tests: publish returns 201 with slug",
+                "Tests: duplicate slug returns 409",
+                "Tests: download endpoint increments count",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 10,
+            "passes": true,
+            "notes": "PRD \u00a79. download_count must be added to DB schema."
+        },
+        {
+            "id": "US-011",
+            "title": "Add GET /v1/neofetch/:slug endpoint",
+            "description": "As a developer, I want a text/plain ANSI color block for any theme for terminal README embeds.",
+            "acceptanceCriteria": [
+                "Add GET /v1/neofetch/{slug} to api/main.py returning text/plain",
+                "Parses theme_data key=value to extract palette colors 0-15 plus background/foreground",
+                "Outputs theme name on first line, then two rows of 8 colored blocks using ANSI \\x1b[48;2;R;G;Bm  \\x1b[0m",
+                "Returns 404 plain text 'Theme not found' if slug not found",
+                "Typecheck passes"
+            ],
+            "priority": 11,
+            "passes": true,
+            "notes": "PRD \u00a79."
+        },
+        {
+            "id": "US-012",
+            "title": "Build generator page (web/index.html)",
+            "description": "As a user, I want to visit tty-theme.dev, type a prompt, and download a theme \u2014 all from the browser.",
+            "acceptanceCriteria": [
+                "Create web/index.html with a prompt textarea (maxlength=200), live character counter '0 / 200', and Generate button",
+                "Generate button calls POST /v1/generate via fetch(); shows spinner while loading",
+                "On success: renders 16-color swatch strip (colored divs) and Download Ghostty + Download iTerm2 buttons",
+                "Download Ghostty: serializes theme_data as-is, triggers file download as <slug>.ghostty, then calls POST /v1/themes/:slug/download",
+                "Download iTerm2: calls GET /v1/themes/:slug to get theme_data, serializes via iterm2 format client-side OR requests ?format=iterm2 from API, triggers file download, then calls POST /v1/themes/:slug/download",
+                "On 429 rate_limit_exceeded: shows 'Daily limit reached. Resets in HH:MM:SS' with live countdown to reset_at",
+                "On 429 with cooldown_seconds > 0: disables Generate button, shows live countdown",
+                "On 400 prompt_too_long: shows inline error (should be caught by maxlength but handle anyway)",
+                "Publish button: shows name input, calls POST /v1/themes, shows shareable URL on success",
+                "Uses CDN Tailwind for styling",
+                "Verify in browser using dev-browser skill"
+            ],
+            "priority": 12,
+            "passes": true,
+            "notes": "PRD \u00a710. Zero build step \u2014 vanilla JS + CDN Tailwind."
+        },
+        {
+            "id": "US-013",
+            "title": "Build gallery page (web/gallery.html)",
+            "description": "As a user, I want to browse community themes at /gallery.",
+            "acceptanceCriteria": [
+                "Create web/gallery.html that calls GET /v1/themes on load",
+                "Renders theme cards: name, 8-color swatch strip, download_count badge, 'Install: tty-theme install <slug>' copy chip",
+                "Sort toggle: Newest | Most Downloaded (re-fetches with sort param)",
+                "Clicking a card links to /theme.html?slug=<slug>",
+                "Empty state: 'No themes yet. Be the first to generate and publish one!'",
+                "Verify in browser using dev-browser skill"
+            ],
+            "priority": 13,
+            "passes": true,
+            "notes": "PRD \u00a76."
+        },
+        {
+            "id": "US-014",
+            "title": "Build theme detail page (web/theme.html)",
+            "description": "As a user, I want a shareable page for each theme at /theme.html?slug=<slug>.",
+            "acceptanceCriteria": [
+                "Create web/theme.html that reads ?slug= from URL, calls GET /v1/themes/:slug",
+                "Shows theme name, full 16-color palette swatch strip",
+                "Shows download_count badge",
+                "Download Ghostty and Download iTerm2 buttons (same logic as index.html, increments count)",
+                "Shows neofetch ANSI block preview (calls GET /v1/neofetch/:slug, displays in <pre>)",
+                "404 state: 'Theme not found'",
+                "Verify in browser using dev-browser skill"
+            ],
+            "priority": 14,
+            "passes": true,
+            "notes": "PRD \u00a76 theme detail."
+        },
+        {
+            "id": "US-015",
+            "title": "Update mockup.html to reflect v1.3 web-only design",
+            "description": "As a stakeholder, I want mockup.html to show the v1.3 web UI: no CLI references, prompt input with char counter, gallery with download counts.",
+            "acceptanceCriteria": [
+                "Remove all CLI-related content (install commands, tty-theme binary references) from mockup.html",
+                "Remove image tab and image upload UI",
+                "Show prompt textarea with maxlength=200 and live character counter",
+                "Show rate limit UX section: '5 generations/day \u2014 Daily limit reached' countdown example",
+                "Show gallery section with download_count badges on theme cards",
+                "Typecheck passes (HTML/JS only)"
+            ],
+            "priority": 15,
+            "passes": true,
+            "notes": "CLAUDE.md: mockup.html stays in sync with PRD."
+        }
+    ]
 }

@@ -1,0 +1,256 @@
+{
+    "project": "tty-theme",
+    "branchName": "ralph/prd-implementation",
+    "description": "tty-theme — PRD v1.2 implementation. Completes remaining CLI commands (list, export, browse, publish, share, gallery-install), community gallery API endpoints, and removes the deprecated image mode code.",
+    "userStories": [
+        {
+            "id": "US-001",
+            "title": "Remove image mode code and --image / --refine flags from CLI",
+            "description": "As a developer, I need to delete modes/image_mode.py, the image/ directory, and remove --image/--refine options from cli/main.py so the codebase matches PRD v1.2 (prompt-only).",
+            "acceptanceCriteria": [
+                "Delete modes/image_mode.py",
+                "Delete image/ directory (loader.py, extractor.py, phash.py)",
+                "Remove --image and --refine options from cli/main.py generate command",
+                "Remove any import of image_mode or image.* from cli/main.py and api/main.py",
+                "Remove test_image_mode.py and test_image_loader.py from tests/",
+                "uv run pytest passes (pre-existing failures in test_llm.py and test_api.py are acceptable)",
+                "Typecheck passes"
+            ],
+            "priority": 1,
+            "passes": false,
+            "notes": "PRD v1.2 drops image mode entirely. Clean removal only."
+        },
+        {
+            "id": "US-002",
+            "title": "Add slug generation utility",
+            "description": "As a developer, I need a shared make_slug() function so CLI publish and API endpoints produce consistent URL-safe slugs.",
+            "acceptanceCriteria": [
+                "Add make_slug(name: str) -> str in generator/slug.py",
+                "Lowercases, replaces spaces/underscores with hyphens, strips non-alphanumeric chars except hyphens",
+                "Collapses consecutive hyphens, strips leading/trailing hyphens",
+                "make_slug('Tokyo Midnight!') == 'tokyo-midnight'",
+                "make_slug('  --neon rain-- ') == 'neon-rain'",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 2,
+            "passes": false,
+            "notes": "Foundation for publish, install, share, and gallery API."
+        },
+        {
+            "id": "US-003",
+            "title": "Add `tty-theme list` command",
+            "description": "As a user, I want to list all locally cached themes so I can see what I have without searching.",
+            "acceptanceCriteria": [
+                "Add @app.command() 'list' to cli/main.py",
+                "Calls repo.list_themes(limit) and prints each theme: created_at[:16], source, query_raw or name (truncated to 40 chars)",
+                "Accepts --limit/-n flag (default 20)",
+                "Prints helpful message when cache is empty",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 3,
+            "passes": false,
+            "notes": "PRD §11 CLI reference."
+        },
+        {
+            "id": "US-004",
+            "title": "Add `tty-theme export` command",
+            "description": "As a user, I want to export a cached theme by name to a specific target format so I can convert a Ghostty-cached theme to iTerm2.",
+            "acceptanceCriteria": [
+                "Add @app.command() 'export' to cli/main.py",
+                "Accepts positional THEME_NAME argument and --target flag (default 'ghostty')",
+                "Searches repo.list_themes() for a theme whose name or query_raw contains THEME_NAME (case-insensitive)",
+                "Serializes theme_data through the correct ThemeSerializer and prints to stdout",
+                "Exits with error if no match found",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 4,
+            "passes": false,
+            "notes": "PRD §11: tty-theme export 'tokyo-midnight' --target iterm2"
+        },
+        {
+            "id": "US-005",
+            "title": "Add TTY_THEME_API_URL constant to cli/main.py",
+            "description": "As a developer, I need all remote API calls to use a single TTY_THEME_API_URL env var so users can point at self-hosted instances.",
+            "acceptanceCriteria": [
+                "Add _API_BASE = os.environ.get('TTY_THEME_API_URL', 'https://api.tty-theme.dev') near top of cli/main.py",
+                "All subsequent CLI commands that call the remote API use _API_BASE",
+                "Typecheck passes"
+            ],
+            "priority": 5,
+            "passes": false,
+            "notes": "Must be added before browse/publish/install use it."
+        },
+        {
+            "id": "US-006",
+            "title": "Add gallery browse endpoint GET /v1/themes to API",
+            "description": "As a web or CLI user, I want to browse community themes via the API so the gallery can be populated.",
+            "acceptanceCriteria": [
+                "Add GET /v1/themes to api/main.py",
+                "Accepts query params: sort ('newest' | 'downloads' | 'likes', default 'newest'), limit (int, default 20, max 100), offset (int, default 0)",
+                "Returns JSON: { themes: [{id, slug, name, source, provider, created_at, theme_data}], total, offset }",
+                "slug is make_slug(name) for each theme",
+                "Reads from ThemeRepository.list_themes()",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 6,
+            "passes": false,
+            "notes": "PRD §16.4."
+        },
+        {
+            "id": "US-007",
+            "title": "Add gallery publish endpoint POST /v1/themes to API",
+            "description": "As a CLI user, I want to publish a theme to the community gallery via API.",
+            "acceptanceCriteria": [
+                "Add POST /v1/themes to api/main.py",
+                "Request body: { name: str, theme_data: str, source: str = 'community', provider: str | None }",
+                "Validates theme_data with validate_theme() — returns 422 on failure",
+                "Generates slug with make_slug(name)",
+                "Saves via repo.save_theme() with source='community'",
+                "Returns 201 { slug, name, created_at }",
+                "Returns 409 if a theme with that slug already exists",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 7,
+            "passes": false,
+            "notes": "PRD §16.4."
+        },
+        {
+            "id": "US-008",
+            "title": "Add gallery get-by-slug endpoint GET /v1/themes/:slug to API",
+            "description": "As a CLI install command, I want to fetch a theme by slug so I can install it locally.",
+            "acceptanceCriteria": [
+                "Add GET /v1/themes/{slug} to api/main.py",
+                "Iterates list_themes() and returns the first theme where make_slug(name) == slug",
+                "Returns { id, slug, name, theme_data, source, provider, created_at } or 404",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 8,
+            "passes": false,
+            "notes": "PRD §16.4. Required by tty-theme install <slug>."
+        },
+        {
+            "id": "US-009",
+            "title": "Add `tty-theme browse` command",
+            "description": "As a CLI user, I want to browse community themes from the gallery without opening a browser.",
+            "acceptanceCriteria": [
+                "Add @app.command() 'browse' to cli/main.py",
+                "Accepts --sort ('newest' | 'downloads' | 'likes', default 'newest') and --limit (default 10)",
+                "Calls GET {_API_BASE}/v1/themes via httpx with a 5s timeout",
+                "If API unreachable, falls back to local repo.list_themes() with a stderr notice",
+                "Prints table: slug (30 chars), source, created_at[:10]",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 9,
+            "passes": false,
+            "notes": "PRD §11."
+        },
+        {
+            "id": "US-010",
+            "title": "Add `tty-theme publish` command",
+            "description": "As a CLI user, I want to publish a locally cached theme to the community gallery.",
+            "acceptanceCriteria": [
+                "Add @app.command() 'publish' to cli/main.py",
+                "Accepts positional THEME_NAME and --target (default 'ghostty')",
+                "Looks up theme in local cache (same substring match as export)",
+                "Calls POST {_API_BASE}/v1/themes via httpx",
+                "On success: prints 'Published! https://tty-theme.dev/t/<slug>'",
+                "On 409: prints 'Already published at https://tty-theme.dev/t/<slug>'",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 10,
+            "passes": false,
+            "notes": "PRD §11."
+        },
+        {
+            "id": "US-011",
+            "title": "Add `tty-theme install <slug>` command",
+            "description": "As a CLI user, I want to install a community theme by slug directly from the gallery.",
+            "acceptanceCriteria": [
+                "Add @app.command() 'install' to cli/main.py (separate from --install flag on generate)",
+                "Accepts positional SLUG argument, --target (default 'ghostty'), --force flag",
+                "Calls GET {_API_BASE}/v1/themes/{slug} via httpx",
+                "On success: calls _install_theme() with returned theme_data and prints install path + activation hint",
+                "On 404: prints 'Theme <slug> not found. Browse themes with: tty-theme browse'",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 11,
+            "passes": false,
+            "notes": "PRD §11: tty-theme install cyberpunk-neon-rain --target ghostty"
+        },
+        {
+            "id": "US-012",
+            "title": "Add `tty-theme share` command",
+            "description": "As a CLI user, I want a shareable URL for a locally cached theme.",
+            "acceptanceCriteria": [
+                "Add @app.command() 'share' to cli/main.py",
+                "Accepts positional THEME_NAME",
+                "Searches local cache for theme by name/query_raw substring",
+                "Prints: 'https://tty-theme.dev/t/<slug>'",
+                "If theme not found locally, prints error with suggestion to generate it first",
+                "Adds hint: 'Run tty-theme publish <name> to make it available to others'",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 12,
+            "passes": false,
+            "notes": "PRD §11."
+        },
+        {
+            "id": "US-013",
+            "title": "Add neofetch-style endpoint GET /v1/neofetch/:slug to API",
+            "description": "As a developer, I want a text/plain ANSI block for any theme so it can be embedded in terminal READMEs.",
+            "acceptanceCriteria": [
+                "Add GET /v1/neofetch/{slug} to api/main.py returning text/plain",
+                "Parses theme_data key=value to extract palette colors 0-15 plus background/foreground",
+                "Outputs: theme name on first line, then two rows of 8 colored blocks using ANSI \\x1b[48;2;R;G;Bm  \\x1b[0m for each palette color",
+                "Returns 404 plain text if slug not found",
+                "Typecheck passes"
+            ],
+            "priority": 13,
+            "passes": false,
+            "notes": "PRD §21.6 API contract and §19.6.2."
+        },
+        {
+            "id": "US-014",
+            "title": "Show spend and key status in `tty-theme config status`",
+            "description": "As a CLI user, I want config status to show today's spend and which provider keys are configured.",
+            "acceptanceCriteria": [
+                "config_status() adds a '── Spend ──────────────────────────────' section",
+                "Shows today's total: repo.get_daily_spend() formatted as '$X.XXXX'",
+                "Shows DAILY_SPEND_CAP from os.environ.get('DAILY_SPEND_CAP', '1.00') as 'Cap: $X.XX'",
+                "Adds a '── API Keys ─────────────────────────────' section",
+                "For each provider in ['gemini','groq','openai','anthropic','mistral']: shows '  <name>  ✓ configured' or '  <name>  - not set' by checking keyring",
+                "Tests pass",
+                "Typecheck passes"
+            ],
+            "priority": 14,
+            "passes": false,
+            "notes": "PRD §11 config status."
+        },
+        {
+            "id": "US-015",
+            "title": "Remove image tab from mockup.html, add gallery browse section",
+            "description": "As a product stakeholder, I want mockup.html to reflect PRD v1.2: no image tab, prompt-only, with a community gallery preview.",
+            "acceptanceCriteria": [
+                "Remove the 'Image' tab button and #panel-image section entirely from mockup.html",
+                "Remove all JS related to image upload: drop zone handlers, file input, URL input, ondrop, ondragover",
+                "The prompt tab is now the only active tab (remove tab bar if only one tab remains)",
+                "Add a '── Community Themes ──' section below the generator with 3 hardcoded placeholder theme cards (name, swatch strip of 8 colored divs, 'tty-theme install <slug>' chip)",
+                "Gallery section has a 'Browse all →' link pointing to '#gallery'",
+                "Typecheck passes (HTML/JS only)"
+            ],
+            "priority": 15,
+            "passes": false,
+            "notes": "CLAUDE.md: mockup.html stays in sync with PRD."
+        }
+    ]
+}

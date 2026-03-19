@@ -14,6 +14,9 @@ the backend:
 from __future__ import annotations
 
 import os
+import re
+
+_SECRET_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 
 def _is_development() -> bool:
@@ -26,9 +29,13 @@ def get_secret(name: str) -> str:
     """Return the value of secret *name*.
 
     Raises:
+        ValueError: if name does not match r'^[A-Z_][A-Z0-9_]*$'.
         KeyError: if the secret is not found.
         RuntimeError: if Secret Manager call fails.
     """
+    if not _SECRET_NAME_RE.match(name):
+        raise ValueError(f"Invalid secret name: {name}")
+
     if _is_development():
         val = os.environ.get(name)
         if val:

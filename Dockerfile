@@ -21,12 +21,11 @@ RUN uv sync --frozen --no-dev --extra api
 COPY api/       ./api/
 COPY cache/     ./cache/
 COPY generator/ ./generator/
-COPY image/     ./image/
-COPY modes/     ./modes/
 COPY providers/ ./providers/
 COPY security/  ./security/
 COPY themes/    ./themes/
 COPY schema/    ./schema/
+COPY web/       ./web/
 
 # Owned by non-root user
 RUN chown -R appuser:appuser /app

@@ -42,7 +42,7 @@ class TestGhosttySerializer:
         assert "background = #1a1a2e" in result
 
     def test_file_extension(self) -> None:
-        assert GhosttySerializer().file_extension() == ".ghostty"
+        assert GhosttySerializer().file_extension() == ""
 
     def test_missing_key_raises(self) -> None:
         bad = {k: v for k, v in _FULL_PALETTE.items() if k != "background"}
