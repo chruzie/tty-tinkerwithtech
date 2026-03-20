@@ -7,56 +7,132 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+def _clear_health_cache():
+    """Clear the module-level health cache between tests."""
+    from providers import openai_compat
+
+    openai_compat._health_cache.clear()
+
+
 class TestOpenAICompatProvider:
+    def setup_method(self):
+        _clear_health_cache()
+
     def test_local_health_true(self):
         from providers.openai_compat import OpenAICompatProvider
-        with patch("httpx.get") as m:
-            m.return_value = MagicMock(status_code=200)
-            p = OpenAICompatProvider("ollama", "http://localhost:11434/v1", "llama3", is_local=True)
+
+        p = OpenAICompatProvider("ollama", "http://localhost:11434/v1", "llama3", is_local=True)
+        with patch.object(p._client, "get", return_value=MagicMock(status_code=200)):
             assert p.health_check() is True
 
     def test_local_health_false_on_error(self):
         from providers.openai_compat import OpenAICompatProvider
-        with patch("httpx.get", side_effect=Exception("refused")):
-            p = OpenAICompatProvider("ollama", "http://localhost:11434/v1", "llama3", is_local=True)
+
+        p = OpenAICompatProvider("ollama", "http://localhost:11434/v1", "llama3", is_local=True)
+        with patch.object(p._client, "get", side_effect=Exception("refused")):
             assert p.health_check() is False
 
     def test_cloud_health_true_with_key(self):
         from providers.openai_compat import OpenAICompatProvider
+
         p = OpenAICompatProvider("groq", "https://api.groq.com/openai/v1", "llama3", api_key="key")
         assert p.health_check() is True
 
     def test_cloud_health_false_without_key(self):
         from providers.openai_compat import OpenAICompatProvider
+
         p = OpenAICompatProvider("groq", "https://api.groq.com/openai/v1", "llama3")
         assert p.health_check() is False
 
     def test_generate_returns_content(self):
         from providers.openai_compat import OpenAICompatProvider
+
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {"choices": [{"message": {"content": "palette = 0 = #000000"}}]}
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"choices": [{"message": {"content": "palette = 0 = #000000"}}], "usage": {"total_tokens": 10}}
         mock_resp.raise_for_status = MagicMock()
-        with patch("httpx.post", return_value=mock_resp):
-            p = OpenAICompatProvider("groq", "https://api.groq.com/openai/v1", "llama3", api_key="k")
-            assert p.generate({"system": "s", "user": "u"}) == "palette = 0 = #000000"
+        p = OpenAICompatProvider("groq", "https://api.groq.com/openai/v1", "llama3", api_key="k")
+        with patch.object(p._client, "post", return_value=mock_resp):
+            content, tokens = p.generate({"system": "s", "user": "u"})
+            assert content == "palette = 0 = #000000"
+            assert tokens == 10
+
+    def test_health_check_cached_within_ttl(self):
+        from providers.openai_compat import OpenAICompatProvider
+
+        p = OpenAICompatProvider("ollama", "http://localhost:11434/v1", "llama3", is_local=True)
+        with patch.object(p._client, "get", return_value=MagicMock(status_code=200)) as mock_get:
+            p.health_check()  # first call — hits httpx
+            p.health_check()  # second call within TTL — should NOT hit httpx again
+        assert mock_get.call_count == 1, "health_check should use cached result within TTL"
+
+    def test_health_check_rechecks_after_ttl(self):
+        import time
+
+        from providers.openai_compat import OpenAICompatProvider, _health_cache
+
+        p = OpenAICompatProvider("ollama", "http://localhost:11434/v1", "llama3", is_local=True)
+        cache_key = f"{p.name}:{p._base_url}"
+        # Seed cache with an expired entry
+        _health_cache[cache_key] = (True, time.monotonic() - 35.0)
+        with patch.object(p._client, "get", return_value=MagicMock(status_code=200)) as mock_get:
+            p.health_check()  # should re-check because entry is expired
+        assert mock_get.call_count == 1
+
+    def test_client_reused_across_calls(self):
+        from providers.openai_compat import OpenAICompatProvider
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"choices": [{"message": {"content": "out"}}], "usage": {"total_tokens": 5}}
+        mock_resp.raise_for_status = MagicMock()
+        p = OpenAICompatProvider("groq", "https://api.groq.com/openai/v1", "llama3", api_key="k")
+        with patch.object(p._client, "post", return_value=mock_resp) as mock_post:
+            p.generate({"system": "s", "user": "u"})
+            p.generate({"system": "s", "user": "u"})
+        # Both calls go through the same client instance
+        assert mock_post.call_count == 2
 
 
 class TestRegistry:
+    def setup_method(self):
+        _clear_health_cache()
+
+    def _mock_client(self, get_status: int = 200, get_raises: Exception | None = None):
+        """Return a mock httpx.Client whose .get() returns the given status."""
+        mock = MagicMock()
+        if get_raises:
+            mock.get.side_effect = get_raises
+        else:
+            mock.get.return_value = MagicMock(status_code=get_status)
+        return mock
+
     def test_resolve_prefers_local_running(self):
         from providers.registry import resolve_provider
+
+        mock_client = self._mock_client(get_status=200)
         with (
-            patch("httpx.get", return_value=MagicMock(status_code=200)),
-            patch("security.keystore.get_key", return_value=None),
+            patch("providers.openai_compat.httpx.Client", return_value=mock_client),
+            patch.dict("os.environ", {}, clear=False),
         ):
+            # Ensure cloud provider env vars are absent so only local is healthy
+            import os
+            os.environ.pop("GEMINI_API_KEY", None)
+            os.environ.pop("GROQ_API_KEY", None)
             p = resolve_provider()
             assert p.name == "ollama"
 
     def test_resolve_raises_when_nothing_available(self):
         from providers.registry import resolve_provider
+
+        mock_client = self._mock_client(get_raises=Exception("refused"))
         with (
-            patch("httpx.get", side_effect=Exception("refused")),
-            patch("security.keystore.get_key", return_value=None),
+            patch("providers.openai_compat.httpx.Client", return_value=mock_client),
+            patch.dict("os.environ", {}, clear=False),
         ):
+            import os
+            os.environ.pop("GEMINI_API_KEY", None)
+            os.environ.pop("GROQ_API_KEY", None)
             with pytest.raises(RuntimeError, match="No LLM provider"):
                 resolve_provider()
 
@@ -75,15 +151,53 @@ class TestRegistry:
                 r.status_code = 429
                 raise httpx.HTTPStatusError("429", request=MagicMock(), response=r)
             m = MagicMock()
-            m.raise_for_status = MagicMock()
-            m.json.return_value = {"choices": [{"message": {"content": "theme output"}}]}
+            m.status_code = 200
+            m.json.return_value = {"choices": [{"message": {"content": "theme output"}}], "usage": {"total_tokens": 8}}
             return m
 
+        mock_client = MagicMock()
+        mock_client.get.return_value = MagicMock(status_code=200)
+        mock_client.post.side_effect = fake_post
+
         with (
-            patch("httpx.get", return_value=MagicMock(status_code=200)),
-            patch("httpx.post", side_effect=fake_post),
-            patch("security.keystore.get_key", return_value="fake-key"),
+            patch("providers.openai_compat.httpx.Client", return_value=mock_client),
+            patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key", "GROQ_API_KEY": "fake-key"}),
         ):
-            result, provider_name = generate_with_fallback({"system": "s", "user": "u"})
-            assert result == "theme output"
+            content, provider_name = generate_with_fallback("user prompt", "system prompt")
+            assert content == "theme output"
+            assert isinstance(provider_name, str)
             assert call_count == 2
+
+    def test_non_429_error_propagates_immediately(self):
+        """Non-429 HTTP errors must propagate without trying the next provider."""
+        import httpx
+
+        from providers.registry import generate_with_fallback
+
+        call_count = 0
+
+        def fake_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            r = MagicMock()
+            r.status_code = 500
+            raise httpx.HTTPStatusError("500", request=MagicMock(), response=r)
+
+        mock_client = MagicMock()
+        mock_client.get.return_value = MagicMock(status_code=200)
+        mock_client.post.side_effect = fake_post
+
+        with (
+            patch("providers.openai_compat.httpx.Client", return_value=mock_client),
+            patch.dict("os.environ", {"GEMINI_API_KEY": "fake-key", "GROQ_API_KEY": "fake-key"}),
+        ):
+            with pytest.raises(httpx.HTTPStatusError):
+                generate_with_fallback("user prompt", "system prompt")
+            assert call_count == 1  # only gemini tried, error propagated
+
+    def test_gemini_tried_before_groq(self):
+        """CATALOGUE must list gemini before groq (server-side ordering)."""
+        from providers.openai_compat import CATALOGUE
+
+        names = [entry[0] for entry in CATALOGUE]
+        assert names.index("gemini") < names.index("groq")

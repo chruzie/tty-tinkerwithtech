@@ -82,6 +82,22 @@ def test_log_cost_and_daily_spend(repo: ThemeRepository) -> None:
     assert abs(total - 0.002) < 1e-9
 
 
+def test_log_cost_upsert_is_atomic(repo: ThemeRepository) -> None:
+    """ON CONFLICT upsert must accumulate calls and cost without duplicates."""
+    repo.log_cost("groq", 0.001)
+    repo.log_cost("groq", 0.001)
+    repo.log_cost("groq", 0.001)
+    total = repo.get_daily_spend()
+    assert abs(total - 0.003) < 1e-9
+
+    # Verify the row count is exactly 1 (no duplicates)
+    import sqlite3
+
+    with sqlite3.connect(repo.db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM cost_log WHERE provider = 'groq'").fetchone()[0]
+    assert count == 1
+
+
 def test_list_themes(repo: ThemeRepository) -> None:
     for i in range(3):
         repo.save_theme(
@@ -91,3 +107,27 @@ def test_list_themes(repo: ThemeRepository) -> None:
         )
     themes = repo.list_themes()
     assert len(themes) == 3
+
+
+def test_find_similar_accepts_str_ids() -> None:
+    """find_similar must return the str ID unchanged (Firestore compat).
+
+    Firestore uses str document IDs; find_similar must propagate the ID type
+    through to the caller so get_by_id(str_id) can be called without int().
+    """
+    from unittest.mock import patch
+
+    from cache.embeddings import find_similar
+
+    # Simulate Firestore-style str IDs in the candidates list
+    candidates: list[tuple[int | str, list[float]]] = [
+        ("doc-abc", [1.0, 0.0]),
+        ("doc-xyz", [0.0, 1.0]),
+    ]
+    query_vec = [1.0, 0.0]  # cosine sim = 1.0 with doc-abc
+
+    with patch("cache.embeddings.embed", return_value=query_vec):
+        result = find_similar("test query", candidates, threshold=0.85)
+
+    assert result == "doc-abc"
+    assert isinstance(result, str)
